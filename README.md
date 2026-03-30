@@ -30,6 +30,12 @@ pip install -e .
 
 主要依赖：mujoco, mink, mediapipe, opencv-python, numpy, pyyaml, daqp
 
+安装后主要入口是：
+
+```bash
+dex-retarget --help
+```
+
 ## 快速开始
 
 ### 1. 转换手部模型（以 Linkerhand L20 为例）
@@ -49,22 +55,22 @@ python scripts/visualize_hand.py --mjcf assets/mjcf/linkerhand_l20_right/model.x
 ### 3. 实时 Retargeting（摄像头）
 
 ```bash
-python scripts/retarget_webcam.py --config configs/retargeting/linkerhand_l20.yaml
+dex-retarget webcam --visualize
 ```
 
 如果想同时看 MediaPipe 的 3D 关键点浏览器视图：
 
 ```bash
-python scripts/retarget_webcam.py \
-    --config configs/retargeting/linkerhand_l20.yaml \
+dex-retarget webcam \
+    --visualize \
     --viser
 ```
 
 默认 `viser` 显示的是 `preprocess_landmarks()` 之后的手局部坐标系 3D 点。如果想看原始 MediaPipe 世界坐标，可以显式指定：
 
 ```bash
-python scripts/retarget_webcam.py \
-    --config configs/retargeting/linkerhand_l20.yaml \
+dex-retarget webcam \
+    --visualize \
     --viser \
     --viser-space raw
 ```
@@ -93,9 +99,8 @@ python scripts/acceptance_check.py \
 ### 5. 离线 Retargeting（视频）
 
 ```bash
-python scripts/retarget_video.py \
+dex-retarget video \
     --video input.mp4 \
-    --config configs/retargeting/linkerhand_l20.yaml \
     --output trajectory.pickle \
     --visualize
 ```
@@ -105,9 +110,8 @@ python scripts/retarget_video.py \
 如果你已经有 Teleopit 的 `hc_mocap` BVH 或 UDP 流，可以跳过 MediaPipe，直接把手骨架转成 21 点后喂给当前 retargeting：
 
 ```bash
-PYTHONPATH=src python3 scripts/retarget_hc_mocap.py \
-    --bvh /home/wubingqian/project/teleop_projects/Teleopit/data/hc_mocap_bvh/ref_with_toe.bvh \
-    --config configs/retargeting/linkerhand_l20.yaml \
+dex-retarget hc-mocap bvh \
+    --bvh assets/ref_with_toe.bvh \
     --hand Right \
     --visualize \
     --viser
@@ -116,13 +120,20 @@ PYTHONPATH=src python3 scripts/retarget_hc_mocap.py \
 实时 UDP 模式：
 
 ```bash
-PYTHONPATH=src python3 scripts/retarget_hc_mocap.py \
-    --reference-bvh /home/wubingqian/project/teleop_projects/Teleopit/data/hc_mocap_bvh/ref_with_toe.bvh \
-    --udp-port 1118 \
-    --config configs/retargeting/linkerhand_l20.yaml \
+dex-retarget hc-mocap udp \
     --hand Right \
     --visualize \
     --udp-stats-every 120
+```
+
+你当前这类高频命令现在可以缩到：
+
+```bash
+dex-retarget hc-mocap udp \
+    --hand Left \
+    --viser \
+    --viser-port 8090 \
+    --visualize
 ```
 
 UDP 模式不依赖 `Teleopit` Python 包；只要求你的 SDK 发送的每个 UDP 包都是一行 BVH motion floats，并且 joint 顺序与 `--reference-bvh` 一致。只有离线 `--bvh` 模式在未安装 `teleopit` 时才需要 `--teleopit-root /path/to/Teleopit`。
@@ -133,9 +144,8 @@ UDP 模式不依赖 `Teleopit` Python 包；只要求你的 SDK 发送的每个 
 也可以只打开 `viser` 里的 3D landmarks 调试视图：
 
 ```bash
-python scripts/retarget_video.py \
+dex-retarget video \
     --video input.mp4 \
-    --config configs/retargeting/linkerhand_l20.yaml \
     --viser
 ```
 
@@ -160,7 +170,7 @@ python scripts/acceptance_check.py \
 
 1. **转换模型**：用 `convert_urdf_to_mjcf.py` 将 URDF 转换为 MJCF
 2. **编写配置**：在 `configs/retargeting/` 下创建 YAML 配置文件，定义 MediaPipe 关键点到机器人 body 的映射关系
-3. **运行测试**：指定新配置运行 `retarget_webcam.py` 验证效果
+3. **运行测试**：指定新配置运行 `dex-retarget webcam --visualize` 验证效果
 
 配置文件格式参考 `configs/retargeting/linkerhand_l20.yaml`，核心字段：
 
@@ -191,17 +201,19 @@ dex-mujoco/
 ├── configs/retargeting/    # Retargeting 配置文件
 ├── assets/mjcf/            # 转换后的 MJCF 模型（gitignored）
 ├── scripts/                # 可执行脚本
+│   ├── acceptance_check.py
 │   ├── convert_urdf_to_mjcf.py
 │   ├── record_webcam.py
-│   ├── retarget_webcam.py
-│   ├── retarget_video.py
 │   └── visualize_hand.py
 └── src/dex_mujoco/         # 核心库
+    ├── cli.py                  # 统一 dex-retarget CLI
     ├── constants.py            # MediaPipe 关键点定义
     ├── hand_detector.py        # MediaPipe 手部检测
     ├── hand_model.py           # MuJoCo 模型封装
     ├── ik_solver.py            # Mink IK 求解器
+    ├── input_sources.py        # 输入源适配
     ├── retargeting_config.py   # 配置加载
+    ├── runtime.py              # 通用 retarget 运行时
     ├── urdf_converter.py       # URDF → MJCF 转换
     ├── vector_retargeting.py   # 向量 retargeting 核心
     └── visualization.py        # MuJoCo 可视化

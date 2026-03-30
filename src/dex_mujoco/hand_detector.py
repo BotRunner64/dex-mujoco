@@ -1,14 +1,15 @@
 """MediaPipe hand tracking wrapper using Tasks API."""
 
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Iterator, Optional, Union
 
 import cv2
 import numpy as np
 
+from .paths import DEFAULT_HAND_LANDMARKER_MODEL
+
 # Default model path relative to project root
-_DEFAULT_MODEL_PATH = Path(__file__).parent.parent.parent / "assets" / "models" / "hand_landmarker.task"
+_DEFAULT_MODEL_PATH = DEFAULT_HAND_LANDMARKER_MODEL
 
 
 @dataclass

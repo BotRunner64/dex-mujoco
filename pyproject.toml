@@ -21,6 +21,9 @@ dev = [
     "ruff",
 ]
 
+[project.scripts]
+dex-retarget = "dex_mujoco.cli:main"
+
 [build-system]
 requires = ["setuptools>=68.0"]
 build-backend = "setuptools.build_meta"
