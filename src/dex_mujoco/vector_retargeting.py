@@ -11,6 +11,12 @@ from scipy.optimize import minimize
 from .hand_model import HandModel
 from .retargeting_config import RetargetingConfig
 
+# MediaPipe landmark indices for pinch detection
+_THUMB_TIP_IDX = 4
+_FINGER_TIP_INDICES = [8, 12, 16, 20]  # index, middle, ring, pinky
+# Thumb-related landmark indices (used to identify thumb vectors)
+_THUMB_LANDMARKS = {0, 1, 2, 3, 4}
+
 _OPERATOR2ROBOT_RIGHT = np.array(
     [
         [0.0, 0.0, -1.0],
@@ -172,6 +178,88 @@ class VectorRetargeter:
         self._target_angles: np.ndarray | None = None
         self._last_qpos: np.ndarray | None = None
 
+        # Pinch-aware dynamic weighting
+        self._pinch_enabled = config.pinch.enabled
+        self._pinch_alphas = np.zeros(4)      # per-finger pinch alpha
+        self._pinch_alpha_thumb = 0.0         # max across fingers
+        self._pinch_d1 = config.pinch.d1
+        self._pinch_d2 = config.pinch.d2
+        self._pinch_weight = config.pinch.weight
+        self._thumb_weight_boost = config.pinch.thumb_weight_boost
+        self._thumb_vector_indices: set[int] = set()
+        self._thumb_site_id = -1
+        self._finger_site_ids: list[int] = []
+
+        if self._pinch_enabled:
+            # Identify which vector indices involve thumb landmarks
+            for i, (o, t) in enumerate(self.human_vector_pairs):
+                if o in _THUMB_LANDMARKS or t in _THUMB_LANDMARKS:
+                    self._thumb_vector_indices.add(i)
+
+            # Look up fingertip site IDs
+            sites = config.pinch.fingertip_sites
+            if len(sites) >= 5:
+                self._thumb_site_id = mujoco.mj_name2id(
+                    self.model, mujoco.mjtObj.mjOBJ_SITE, sites[0]
+                )
+                for name in sites[1:5]:
+                    sid = mujoco.mj_name2id(
+                        self.model, mujoco.mjtObj.mjOBJ_SITE, name
+                    )
+                    self._finger_site_ids.append(sid)
+                assert self._thumb_site_id >= 0, (
+                    f"Thumb site '{sites[0]}' not found in model"
+                )
+                for i, sid in enumerate(self._finger_site_ids):
+                    assert sid >= 0, (
+                        f"Finger site '{sites[i+1]}' not found in model"
+                    )
+
+        # Position constraints: wrist-relative position matching for thumb joints
+        self._pos_enabled = config.position.enabled
+        self._pos_weight = config.position.weight
+        self._pos_landmark_indices: list[int] = []
+        self._pos_body_ids: list[int] = []
+        self._pos_body_is_site: list[bool] = []
+        self._pos_per_weights: list[float] = []
+        self._position_targets: np.ndarray | None = None
+        self._robot_palm_size: float = 0.0
+        self._scale_landmark_idx: int = 0  # index into landmarks for scale ref
+        self._wrist_body_id: int = 0
+
+        if self._pos_enabled:
+            pos_cfg = config.position
+            # Scale reference: compute robot palm size from two bodies
+            self._scale_landmark_idx = pos_cfg.scale_landmarks[1]
+            scale_ids = []
+            for i, name in enumerate(pos_cfg.scale_bodies):
+                is_site = pos_cfg.scale_body_types[i] == "site"
+                otype = mujoco.mjtObj.mjOBJ_SITE if is_site else mujoco.mjtObj.mjOBJ_BODY
+                bid = mujoco.mj_name2id(self.model, otype, name)
+                assert bid >= 0, f"Scale body '{name}' not found"
+                scale_ids.append((bid, is_site))
+
+            # Wrist body ID (first scale body, typically "world")
+            self._wrist_body_id = scale_ids[0][0]
+            self._wrist_is_site = scale_ids[0][1]
+
+            # Precompute robot palm size at init (palm bones don't move)
+            self._forward()
+            p0 = self._get_pos(scale_ids[0][0], scale_ids[0][1])
+            p1 = self._get_pos(scale_ids[1][0], scale_ids[1][1])
+            self._robot_palm_size = float(np.linalg.norm(p1 - p0))
+
+            # Set up per-constraint data
+            for pc in pos_cfg.constraints:
+                self._pos_landmark_indices.append(pc.landmark)
+                is_site = pc.body_type == "site"
+                self._pos_body_is_site.append(is_site)
+                otype = mujoco.mjtObj.mjOBJ_SITE if is_site else mujoco.mjtObj.mjOBJ_BODY
+                bid = mujoco.mj_name2id(self.model, otype, pc.body)
+                assert bid >= 0, f"Position constraint body '{pc.body}' not found"
+                self._pos_body_ids.append(bid)
+                self._pos_per_weights.append(pc.weight)
+
         # Angle constraints: map human joint flexion to robot joint angle
         self._angle_landmarks = []  # list of (a, b, c) landmark triples
         self._angle_qpos_ids = []  # qpos index for each constrained joint
@@ -231,17 +319,57 @@ class VectorRetargeter:
             vectors[i] = p_task - p_origin
         return vectors
 
+    def _get_effective_weight(self, i: int) -> float:
+        """Get vector weight, boosted for thumb vectors during pinch."""
+        w = self._weights[i]
+        if (self._pinch_enabled and self._pinch_alpha_thumb > 0
+                and i in self._thumb_vector_indices):
+            w *= (1.0 + self._pinch_alpha_thumb * self._thumb_weight_boost)
+        return w
+
+    def _compute_pinch_loss(self) -> float:
+        """Compute fingertip attraction loss for pinch."""
+        if not self._pinch_enabled or self._pinch_alpha_thumb < 1e-6:
+            return 0.0
+        thumb_pos = self.data.site_xpos[self._thumb_site_id]
+        loss = 0.0
+        for i in range(4):
+            alpha = self._pinch_alphas[i]
+            if alpha < 1e-6:
+                continue
+            finger_pos = self.data.site_xpos[self._finger_site_ids[i]]
+            diff = thumb_pos - finger_pos
+            loss += alpha * self._pinch_weight * np.dot(diff, diff)
+        return loss
+
+    def _compute_position_loss(self) -> float:
+        """Compute wrist-relative position matching loss for thumb joints."""
+        if not self._pos_enabled or self._position_targets is None:
+            return 0.0
+        wrist_pos = self._get_pos(self._wrist_body_id, self._wrist_is_site)
+        loss = 0.0
+        for k in range(len(self._pos_body_ids)):
+            body_pos = self._get_pos(
+                self._pos_body_ids[k], self._pos_body_is_site[k]
+            )
+            robot_rel = body_pos - wrist_pos
+            diff = robot_rel - self._position_targets[k]
+            w = self._pos_weight * self._pos_per_weights[k]
+            loss += w * np.dot(diff, diff)
+        return loss
+
     def _compute_loss(self, qpos: np.ndarray) -> float:
         self._forward(qpos)
         robot_vecs = self._get_robot_vectors()
         loss = 0.0
         for i in range(len(robot_vecs)):
             r_norm = np.linalg.norm(robot_vecs[i])
+            w = self._get_effective_weight(i)
             if r_norm < 1e-8:
-                loss += self._weights[i]
+                loss += w
                 continue
             cos_sim = np.dot(robot_vecs[i] / r_norm, self._target_directions[i])
-            loss += self._weights[i] * (1.0 - cos_sim)
+            loss += w * (1.0 - cos_sim)
         if self._last_qpos is not None:
             loss += self._norm_delta * np.sum((qpos - self._last_qpos) ** 2)
         if self._target_angles is not None:
@@ -249,6 +377,8 @@ class VectorRetargeter:
                 qadr = self._angle_qpos_ids[k]
                 diff = qpos[qadr] - self._target_angles[k]
                 loss += self._angle_weights[k] * diff * diff
+        loss += self._compute_pinch_loss()
+        loss += self._compute_position_loss()
         return loss
 
     def _compute_loss_and_grad(self, qpos: np.ndarray) -> tuple[float, np.ndarray]:
@@ -261,14 +391,15 @@ class VectorRetargeter:
         for i in range(len(self.origin_ids)):
             r_vec = robot_vecs[i]
             r_norm = np.linalg.norm(r_vec)
+            w = self._get_effective_weight(i)
             if r_norm < 1e-8:
-                loss += self._weights[i]
+                loss += w
                 continue
 
             r_dir = r_vec / r_norm
             t_dir = self._target_directions[i]
             cos_sim = np.dot(r_dir, t_dir)
-            loss += self._weights[i] * (1.0 - cos_sim)
+            loss += w * (1.0 - cos_sim)
 
             grad_vec = -(t_dir - cos_sim * r_dir) / r_norm
             jac_task = np.zeros((3, nv))
@@ -284,7 +415,7 @@ class VectorRetargeter:
             else:
                 mujoco.mj_jacBody(self.model, self.data, jac_origin, None, self.origin_ids[i])
 
-            grad += self._weights[i] * (grad_vec @ (jac_task - jac_origin))
+            grad += w * (grad_vec @ (jac_task - jac_origin))
 
         if self._last_qpos is not None:
             delta_q = qpos - self._last_qpos
@@ -301,6 +432,61 @@ class VectorRetargeter:
                 diff = qpos[qadr] - target
                 loss += w * diff * diff
                 grad[dadr] += 2.0 * w * diff
+
+        # Pinch fingertip attraction loss
+        if self._pinch_enabled and self._pinch_alpha_thumb > 1e-6:
+            thumb_pos = self.data.site_xpos[self._thumb_site_id]
+            jac_thumb = np.zeros((3, nv))
+            mujoco.mj_jacSite(
+                self.model, self.data, jac_thumb, None, self._thumb_site_id
+            )
+            for i in range(4):
+                alpha = self._pinch_alphas[i]
+                if alpha < 1e-6:
+                    continue
+                finger_pos = self.data.site_xpos[self._finger_site_ids[i]]
+                diff = thumb_pos - finger_pos
+                coeff = alpha * self._pinch_weight
+                loss += coeff * np.dot(diff, diff)
+                jac_finger = np.zeros((3, nv))
+                mujoco.mj_jacSite(
+                    self.model, self.data, jac_finger, None,
+                    self._finger_site_ids[i],
+                )
+                grad += 2.0 * coeff * (diff @ (jac_thumb - jac_finger))
+
+        # Position constraints: wrist-relative position matching
+        if self._pos_enabled and self._position_targets is not None:
+            wrist_pos = self._get_pos(self._wrist_body_id, self._wrist_is_site)
+            jac_wrist = np.zeros((3, nv))
+            if self._wrist_is_site:
+                mujoco.mj_jacSite(
+                    self.model, self.data, jac_wrist, None, self._wrist_body_id
+                )
+            else:
+                mujoco.mj_jacBody(
+                    self.model, self.data, jac_wrist, None, self._wrist_body_id
+                )
+            for k in range(len(self._pos_body_ids)):
+                body_pos = self._get_pos(
+                    self._pos_body_ids[k], self._pos_body_is_site[k]
+                )
+                robot_rel = body_pos - wrist_pos
+                diff = robot_rel - self._position_targets[k]
+                w = self._pos_weight * self._pos_per_weights[k]
+                loss += w * np.dot(diff, diff)
+                jac_body = np.zeros((3, nv))
+                if self._pos_body_is_site[k]:
+                    mujoco.mj_jacSite(
+                        self.model, self.data, jac_body, None,
+                        self._pos_body_ids[k],
+                    )
+                else:
+                    mujoco.mj_jacBody(
+                        self.model, self.data, jac_body, None,
+                        self._pos_body_ids[k],
+                    )
+                grad += 2.0 * w * (diff @ (jac_body - jac_wrist))
 
         return loss, grad
 
@@ -321,6 +507,27 @@ class VectorRetargeter:
             else:
                 directions[i] = v / norm
         self._target_directions = directions
+
+        # Compute position targets for thumb joints
+        if self._pos_enabled:
+            human_palm_size = np.linalg.norm(landmarks[self._scale_landmark_idx])
+            scale = self._robot_palm_size / max(human_palm_size, 1e-6)
+            n_pc = len(self._pos_landmark_indices)
+            targets = np.empty((n_pc, 3), dtype=np.float64)
+            for k in range(n_pc):
+                targets[k] = scale * landmarks[self._pos_landmark_indices[k]]
+            self._position_targets = targets
+
+        # Compute pinch alphas from human landmarks
+        if self._pinch_enabled:
+            thumb_pos = landmarks[_THUMB_TIP_IDX]
+            for i, tip_idx in enumerate(_FINGER_TIP_INDICES):
+                dist = np.linalg.norm(landmarks[tip_idx] - thumb_pos)
+                d1, d2 = self._pinch_d1, self._pinch_d2
+                self._pinch_alphas[i] = np.clip(
+                    (d2 - dist) / (d2 - d1 + 1e-8), 0.0, 1.0
+                )
+            self._pinch_alpha_thumb = float(np.max(self._pinch_alphas))
 
         # Compute target angles from human landmarks
         if self._angle_landmarks:

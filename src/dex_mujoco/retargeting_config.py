@@ -27,6 +27,47 @@ class HandConfig:
 
 
 @dataclass
+class PinchConfig:
+    """Pinch-aware dynamic weighting for thumb retargeting.
+
+    When the human thumb tip approaches a fingertip (distance < d2),
+    thumb vector weights are boosted and a fingertip attraction loss
+    pulls the robot thumb toward the corresponding finger.
+    """
+    enabled: bool = False
+    d1: float = 0.03        # full pinch threshold (meters)
+    d2: float = 0.06        # no pinch threshold (meters)
+    weight: float = 5.0     # fingertip attraction loss weight
+    thumb_weight_boost: float = 1.5  # multiplier for thumb vector weights when pinching
+    fingertip_sites: list[str] = field(default_factory=list)  # [thumb, index, middle, ring, pinky]
+
+
+@dataclass
+class PositionConstraint:
+    """Map a MediaPipe landmark to a robot body/site position."""
+    landmark: int = 0
+    body: str = ""
+    body_type: str = "body"  # "body" or "site"
+    weight: float = 1.0
+
+
+@dataclass
+class PositionConfig:
+    """Position-based constraints for thumb retargeting.
+
+    Adds wrist-relative position matching loss for intermediate joints,
+    forcing actual bending instead of just direction matching.
+    Auto-computes human-to-robot scale from palm geometry.
+    """
+    enabled: bool = False
+    weight: float = 8.0              # global position loss weight
+    scale_landmarks: list[int] = field(default_factory=lambda: [0, 9])
+    scale_bodies: list[str] = field(default_factory=lambda: ["world", "middle_proximal"])
+    scale_body_types: list[str] = field(default_factory=lambda: ["body", "body"])
+    constraints: list[PositionConstraint] = field(default_factory=list)
+
+
+@dataclass
 class AngleConstraint:
     """Map human landmark angle to robot joint angle.
 
@@ -49,6 +90,8 @@ class RetargetingConfig:
     task_link_types: list[str] = field(default_factory=list)
     vector_weights: list[float] = field(default_factory=list)
     angle_constraints: list[AngleConstraint] = field(default_factory=list)
+    pinch: PinchConfig = field(default_factory=PinchConfig)
+    position: PositionConfig = field(default_factory=PositionConfig)
     preprocess: PreprocessConfig = field(default_factory=PreprocessConfig)
     solver: SolverConfig = field(default_factory=SolverConfig)
 
@@ -97,6 +140,36 @@ class RetargetingConfig:
                 joint=ac_data["joint"],
                 weight=ac_data.get("weight", 1.0),
             ))
+
+        pos_data = rt.get("position_constraints", {})
+        if pos_data and pos_data.get("enabled", False):
+            constraints = []
+            for pc in pos_data.get("constraints", []):
+                constraints.append(PositionConstraint(
+                    landmark=pc["landmark"],
+                    body=pc["body"],
+                    body_type=pc.get("body_type", "body"),
+                    weight=pc.get("weight", 1.0),
+                ))
+            config.position = PositionConfig(
+                enabled=True,
+                weight=pos_data.get("weight", 8.0),
+                scale_landmarks=pos_data.get("scale_landmarks", [0, 9]),
+                scale_bodies=pos_data.get("scale_bodies", ["world", "middle_proximal"]),
+                scale_body_types=pos_data.get("scale_body_types", ["body", "body"]),
+                constraints=constraints,
+            )
+
+        pinch_data = rt.get("pinch", {})
+        if pinch_data:
+            config.pinch = PinchConfig(
+                enabled=pinch_data.get("enabled", False),
+                d1=pinch_data.get("d1", 0.03),
+                d2=pinch_data.get("d2", 0.06),
+                weight=pinch_data.get("weight", 5.0),
+                thumb_weight_boost=pinch_data.get("thumb_weight_boost", 1.5),
+                fingertip_sites=pinch_data.get("fingertip_sites", []),
+            )
 
         preprocess_data = rt.get("preprocess", {})
         config.preprocess = PreprocessConfig(**{
