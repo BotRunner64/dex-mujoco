@@ -100,6 +100,36 @@ python scripts/retarget_video.py \
     --visualize
 ```
 
+### 5.1 hc_mocap 手部输入
+
+如果你已经有 Teleopit 的 `hc_mocap` BVH 或 UDP 流，可以跳过 MediaPipe，直接把手骨架转成 21 点后喂给当前 retargeting：
+
+```bash
+PYTHONPATH=src python3 scripts/retarget_hc_mocap.py \
+    --bvh /home/wubingqian/project/teleop_projects/Teleopit/data/hc_mocap_bvh/ref_with_toe.bvh \
+    --config configs/retargeting/linkerhand_l20.yaml \
+    --hand Right \
+    --visualize \
+    --viser
+```
+
+实时 UDP 模式：
+
+```bash
+PYTHONPATH=src python3 scripts/retarget_hc_mocap.py \
+    --reference-bvh /home/wubingqian/project/teleop_projects/Teleopit/data/hc_mocap_bvh/ref_with_toe.bvh \
+    --udp-port 1118 \
+    --config configs/retargeting/linkerhand_l20.yaml \
+    --hand Right \
+    --visualize \
+    --udp-stats-every 120
+```
+
+UDP 模式不依赖 `Teleopit` Python 包；只要求你的 SDK 发送的每个 UDP 包都是一行 BVH motion floats，并且 joint 顺序与 `--reference-bvh` 一致。只有离线 `--bvh` 模式在未安装 `teleopit` 时才需要 `--teleopit-root /path/to/Teleopit`。
+`hc_mocap` 输入会自动使用 wrist 真局部坐标做 retarget，因此即使配置文件里是 `wrist_local`，脚本也会切到更适合 `hc_mocap` 的处理方式。
+如果要检查 UDP 是否正常进入，可以看终端的 `UDP stats` 输出，确认 `recv` / `valid` 是否持续增长，以及 `floats` 是否等于参考 BVH 的通道数。
+如果 `viser-space` 用的是 `local`，wrist 的整体平移和转动会被去掉，所以这时看到的是“手指相对手腕”的运动；要先确认 UDP 原始输入是否在变化，建议切到 `--viser-space raw`。
+
 也可以只打开 `viser` 里的 3D landmarks 调试视图：
 
 ```bash
