@@ -156,6 +156,8 @@ class VectorRetargeter:
         self._angle_dof_ids: list[int] = []
         self._angle_joint_ranges: list[tuple[float, float]] = []
         self._angle_weights: list[float] = []
+        self._angle_scales: list[float] = []
+        self._angle_inverts: list[bool] = []
         for constraint in config.angle_constraints:
             self._angle_landmarks.append(tuple(constraint.landmarks))
             joint_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_JOINT, constraint.joint)
@@ -166,6 +168,8 @@ class VectorRetargeter:
             low, high = self.model.jnt_range[joint_id]
             self._angle_joint_ranges.append((float(low), float(high)))
             self._angle_weights.append(constraint.weight)
+            self._angle_scales.append(float(constraint.scale))
+            self._angle_inverts.append(bool(constraint.invert))
 
         self._bounds: list[tuple[float | None, float | None]] = []
         for joint_index in range(self.model.nq):
@@ -404,7 +408,11 @@ class VectorRetargeter:
                     cos_angle = np.clip(np.dot(v_ba, v_bc) / (norm_ba * norm_bc), -1.0, 1.0)
                     flexion = np.pi - np.arccos(cos_angle)
                 low, high = self._angle_joint_ranges[index]
-                target_angles[index] = low + (flexion / np.pi) * (high - low)
+                normalized = flexion / np.pi
+                if self._angle_inverts[index]:
+                    normalized = 1.0 - normalized
+                normalized = np.clip(normalized * self._angle_scales[index], 0.0, 1.0)
+                target_angles[index] = low + normalized * (high - low)
             self._target_angles = target_angles
 
     def solve(self) -> np.ndarray:

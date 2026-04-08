@@ -57,15 +57,12 @@ class RetargetRuntime:
                 print(line)
 
     def process_detection(self, detection) -> None:
-        metadata = {}
-        if getattr(detection, "landmarks_3d_local", None) is not None:
-            metadata["preprocess_frame_override"] = "camera_aligned"
         frame = HandFrame(
             landmarks_3d=detection.landmarks_3d,
             landmarks_2d=detection.landmarks_2d,
             handedness=detection.handedness,
             landmarks_3d_local=detection.landmarks_3d_local,
-            metadata=metadata,
+            metadata={},
         )
         result = self.engine.process(frame)
         self.trajectory_recorder.on_result(result)

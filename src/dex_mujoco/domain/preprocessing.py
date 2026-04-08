@@ -8,7 +8,7 @@ _OPERATOR2ROBOT_RIGHT = np.array(
     [
         [0.0, 0.0, -1.0],
         [-1.0, 0.0, 0.0],
-        [0.0, -1.0, 0.0],
+        [0.0, 1.0, 0.0],
     ],
     dtype=np.float64,
 )
@@ -29,11 +29,13 @@ def _mirror_left_to_right(landmarks_3d: np.ndarray) -> np.ndarray:
 
 
 def _estimate_wrist_frame(landmarks_3d: np.ndarray) -> np.ndarray:
-    palm = landmarks_3d[[0, 5, 9, 13, 17], :]
-    x_vector = landmarks_3d[0] - landmarks_3d[9]
-    palm_centered = palm - palm.mean(axis=0, keepdims=True)
-    _, _, vh = np.linalg.svd(palm_centered, full_matrices=False)
+    points = landmarks_3d[[0, 5, 9], :]
+    x_vector = points[0] - points[2]
+
+    points = points - np.mean(points, axis=0, keepdims=True)
+    _, _, vh = np.linalg.svd(points, full_matrices=False)
     normal = vh[-1]
+
     normal_norm = np.linalg.norm(normal)
     if normal_norm < 1e-8:
         raise ValueError("Cannot estimate palm normal from degenerate landmarks")
@@ -51,7 +53,7 @@ def _estimate_wrist_frame(landmarks_3d: np.ndarray) -> np.ndarray:
         raise ValueError("Cannot estimate palm z-axis from degenerate landmarks")
     z_axis = z_axis / z_norm
 
-    if np.dot(z_axis, landmarks_3d[17] - landmarks_3d[5]) < 0.0:
+    if np.dot(z_axis, points[1] - points[2]) < 0.0:
         normal *= -1.0
         z_axis *= -1.0
 

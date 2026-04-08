@@ -59,6 +59,8 @@ class AngleConstraint:
     landmarks: list[int] = field(default_factory=list)
     joint: str = ""
     weight: float = 1.0
+    scale: float = 1.0
+    invert: bool = False
 
 
 @dataclass
@@ -115,6 +117,9 @@ class RetargetingConfig:
             raise ValueError("temporal_filter_alpha must be in (0, 1]")
         if not 0.0 < self.solver.output_alpha <= 1.0:
             raise ValueError("solver.output_alpha must be in (0, 1]")
+        for constraint in self.angle_constraints:
+            if constraint.scale <= 0.0:
+                raise ValueError("angle constraint scale must be > 0")
         if any(link_type not in {"body", "site"} for link_type in self.origin_link_types):
             raise ValueError("origin_link_types must only contain 'body' or 'site'")
         if any(link_type not in {"body", "site"} for link_type in self.task_link_types):

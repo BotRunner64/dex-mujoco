@@ -143,6 +143,12 @@ def test_hand_recording_artifact_roundtrip(tmp_path):
     assert payload["num_detected"] == 2
     assert len(payload["frames"]) == 2
     assert np.array_equal(payload["frames"][1].landmarks_3d_local, frames[1].landmarks_3d_local)
+    assert payload["frames"][1].preprocess_frame_override is None
+
+
+def test_hand_frame_defaults_to_global_landmarks_even_when_local_exists():
+    frame = _frame("Right", with_local=True)
+    assert np.array_equal(frame.retarget_landmarks, frame.landmarks_3d)
 
 
 def test_recording_source_replays_saved_frames(tmp_path):

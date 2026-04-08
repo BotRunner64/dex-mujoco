@@ -63,6 +63,8 @@ def load_retargeting_config(config_path: str) -> RetargetingConfig:
             landmarks=item["landmarks"],
             joint=item["joint"],
             weight=item.get("weight", 1.0),
+            scale=item.get("scale", 1.0),
+            invert=item.get("invert", False),
         )
         for item in retargeting_data.get("angle_constraints", [])
     ]

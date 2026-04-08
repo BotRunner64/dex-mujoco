@@ -20,7 +20,7 @@ class HandFrame:
 
     @property
     def retarget_landmarks(self) -> np.ndarray:
-        if self.landmarks_3d_local is not None:
+        if self.metadata.get("retarget_from_local") is True and self.landmarks_3d_local is not None:
             return self.landmarks_3d_local
         return self.landmarks_3d
 

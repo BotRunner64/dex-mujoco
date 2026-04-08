@@ -24,15 +24,12 @@ _HAND_CONNECTIONS = (
 
 
 def _to_hand_frame(detection: HandDetection, *, local_frame_override: bool = False) -> HandFrame:
-    metadata: dict[str, object] = {}
-    if local_frame_override and detection.landmarks_3d_local is not None:
-        metadata["preprocess_frame_override"] = "camera_aligned"
     return HandFrame(
         landmarks_3d=detection.landmarks_3d,
         landmarks_2d=detection.landmarks_2d,
         handedness=detection.handedness,
         landmarks_3d_local=detection.landmarks_3d_local,
-        metadata=metadata,
+        metadata={},
     )
 
 

@@ -6,6 +6,7 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from dex_mujoco.acceptance import mirror_pose_to_left, rotation_matrix, synthetic_hand_pose
+from dex_mujoco.domain.preprocessing import preprocess_landmarks
 from dex_mujoco.retargeting_config import RetargetingConfig
 from dex_mujoco.vector_retargeting import compute_target_directions
 
@@ -56,3 +57,31 @@ def test_left_and_right_inputs_match_after_mirroring():
     )
     cosine = float(np.mean(np.sum(right_dirs * left_dirs, axis=1)))
     assert cosine > 0.98
+
+
+def test_wrist_local_preprocess_matches_reference_operator_frame():
+    pose = synthetic_hand_pose("pinch")
+    centered = pose - pose[0:1, :]
+    points = centered[[0, 5, 9], :]
+    x_vector = points[0] - points[2]
+    points = points - np.mean(points, axis=0, keepdims=True)
+    _, _, vh = np.linalg.svd(points, full_matrices=False)
+    normal = vh[-1] / np.linalg.norm(vh[-1])
+    x_axis = x_vector - np.dot(x_vector, normal) * normal
+    x_axis = x_axis / np.linalg.norm(x_axis)
+    z_axis = np.cross(x_axis, normal)
+    z_axis = z_axis / np.linalg.norm(z_axis)
+    if np.dot(z_axis, points[1] - points[2]) < 0.0:
+        normal *= -1.0
+        z_axis *= -1.0
+
+    operator2robot = np.array(
+        [
+            [0.0, 0.0, -1.0],
+            [-1.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0],
+        ]
+    )
+    expected = centered @ np.stack([x_axis, normal, z_axis], axis=1) @ operator2robot
+    actual = preprocess_landmarks(pose, handedness="Right", frame="wrist_local")
+    assert np.allclose(actual, expected)
