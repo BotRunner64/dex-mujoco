@@ -10,6 +10,7 @@ from dex_mujoco.infrastructure import (
     OpenCvPreviewWindow,
     RecordingHandTrackingSource,
     RobotHandOutputSink,
+    RobotHandVideoOutputSink,
     TerminalRecordingController,
     create_hc_mocap_udp_source,
     create_pico_source,
@@ -18,6 +19,12 @@ from dex_mujoco.infrastructure import (
 )
 from dex_mujoco.infrastructure.sources import MediaPipeInputSource
 from dex_mujoco.paths import DEFAULT_CONFIG_PATH, DEFAULT_HC_MOCAP_REFERENCE_BVH
+
+
+def _close_resource(resource: object) -> None:
+    close_fn = getattr(resource, "close", None)
+    if callable(close_fn):
+        close_fn()
 
 
 def _add_common_args(parser: argparse.ArgumentParser) -> None:
@@ -67,6 +74,11 @@ def build_parser() -> argparse.ArgumentParser:
     _add_common_args(replay)
     replay.add_argument("--recording", required=True, help="Path to a saved hand-tracking recording")
     replay.add_argument("--loop", action="store_true", help="Loop the saved recording indefinitely")
+    replay.add_argument(
+        "--dump-video",
+        default=None,
+        help="Optional MP4 path for dumping the robot-hand replay video while replaying",
+    )
 
     pico = subparsers.add_parser("pico", help="Retarget from live PICO hand tracking via XRoboToolkit")
     _add_common_args(pico)
@@ -101,15 +113,41 @@ def _build_engine(args: argparse.Namespace, *, input_type: str) -> RetargetingEn
     return RetargetingEngine.from_config_path(args.config, input_type=input_type)
 
 
-def _build_session(engine: RetargetingEngine, *, visualize: bool, show_preview: bool, key_callback=None) -> RetargetingSession:
+def _build_session(
+    engine: RetargetingEngine,
+    *,
+    visualize: bool,
+    show_preview: bool,
+    key_callback=None,
+    video_output_path: str | None = None,
+    video_output_fps: int | None = None,
+    allow_visualization_fallback: bool = False,
+) -> RetargetingSession:
     sinks = []
     frame_sinks = []
     if visualize:
-        frame_sinks.append(AsyncLandmarkOutputSink())
-        sinks.extend(
-            [
-                RobotHandOutputSink(engine.hand_model, key_callback=key_callback),
-            ]
+        try:
+            frame_sinks.append(AsyncLandmarkOutputSink())
+            sinks.append(RobotHandOutputSink(engine.hand_model, key_callback=key_callback))
+        except BaseException as exc:
+            for sink in reversed(frame_sinks):
+                _close_resource(sink)
+            for sink in reversed(sinks):
+                _close_resource(sink)
+            frame_sinks = []
+            sinks = []
+            if not allow_visualization_fallback or video_output_path is None:
+                raise
+            print(f"Warning: visualization disabled during replay video dump: {exc}")
+    if video_output_path is not None:
+        if video_output_fps is None:
+            raise ValueError("video_output_fps is required when video_output_path is provided")
+        sinks.append(
+            RobotHandVideoOutputSink(
+                engine.hand_model,
+                output_path=video_output_path,
+                fps=video_output_fps,
+            )
         )
     preview_window = OpenCvPreviewWindow() if show_preview else None
     return RetargetingSession(engine, sinks=sinks, frame_sinks=frame_sinks, preview_window=preview_window)
@@ -208,12 +246,21 @@ def _run_replay(args: argparse.Namespace) -> None:
         record_output_path=args.record_output,
     )
     engine = _build_engine(args, input_type="replay")
-    session = _build_session(engine, visualize=True, show_preview=False)
+    session = _build_session(
+        engine,
+        visualize=True,
+        show_preview=False,
+        video_output_path=args.dump_video,
+        video_output_fps=source.fps,
+        allow_visualization_fallback=True,
+    )
     metadata = getattr(source, "recording_metadata", {})
     extra_lines = [
         f"Recorded source: {metadata.get('input_source', args.recording)} | Recorded input type: {metadata.get('input_type', 'unknown')}",
         f"Recorded fps: {source.fps} | Recorded detections: {metadata.get('num_detected', 0)}",
     ]
+    if args.dump_video:
+        extra_lines.append(f"Replay video dump: {args.dump_video}")
     _print_startup(
         engine,
         source_desc=source.source_desc,

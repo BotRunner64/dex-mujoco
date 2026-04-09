@@ -4,7 +4,7 @@ from .artifacts import load_hand_recording_artifact, save_hand_recording_artifac
 from .config_loader import load_retargeting_config
 from .hand_model import HandModel
 from .preview import OpenCvPreviewWindow
-from .sinks import AsyncLandmarkOutputSink, RobotHandOutputSink, TrajectoryRecorder
+from .sinks import AsyncLandmarkOutputSink, RobotHandOutputSink, RobotHandVideoOutputSink, TrajectoryRecorder
 from .sources import (
     HCMocapInputSource,
     MediaPipeInputSource,
@@ -26,6 +26,7 @@ __all__ = [
     "RecordedHandDataSource",
     "RecordingHandTrackingSource",
     "RobotHandOutputSink",
+    "RobotHandVideoOutputSink",
     "TrajectoryRecorder",
     "TerminalRecordingController",
     "VectorRetargeter",

@@ -2,12 +2,85 @@
 
 from __future__ import annotations
 
+import importlib
+import os
+import platform
+from pathlib import Path
+
+import cv2
+import mujoco
 import numpy as np
 
 from dex_mujoco.domain import HandFrame, HandFrameSink, OutputSink, RetargetingStepResult, preprocess_landmarks
-from dex_mujoco.visualization import AsyncLandmarkVisualizer, HandVisualizer
+from dex_mujoco.visualization import (
+    AsyncLandmarkVisualizer,
+    HandVisualizer,
+    configure_default_hand_camera,
+    _try_frame_hand_camera,
+)
 
 from .hand_model import HandModel
+
+
+def _reload_renderer_cls_for_backend(backend: str | None):
+    from mujoco.rendering.classic import gl_context as gl_context_module
+    from mujoco.rendering.classic import renderer as renderer_module
+
+    if backend is None:
+        os.environ.pop("MUJOCO_GL", None)
+    else:
+        os.environ["MUJOCO_GL"] = backend
+
+    importlib.reload(gl_context_module)
+    renderer_module = importlib.reload(renderer_module)
+    return renderer_module.Renderer
+
+
+def _create_offscreen_renderer(model, *, width: int, height: int):
+    backend_env = os.environ.get("MUJOCO_GL")
+    if backend_env:
+        try:
+            return mujoco.Renderer(model, height=height, width=width)
+        except Exception as exc:
+            raise RuntimeError(
+                "Cannot create MuJoCo replay renderer with the configured "
+                f"MUJOCO_GL={backend_env!r}: {exc}"
+            ) from exc
+
+    if platform.system() == "Linux":
+        try:
+            renderer_cls = _reload_renderer_cls_for_backend("egl")
+            return renderer_cls(model, height=height, width=width)
+        except Exception:
+            _reload_renderer_cls_for_backend(None)
+
+    try:
+        return mujoco.Renderer(model, height=height, width=width)
+    except Exception as exc:
+        raise RuntimeError(
+            "Cannot create MuJoCo replay renderer. If you are running headless, "
+            "try `MUJOCO_GL=egl`."
+        ) from exc
+
+
+def _fit_video_size(
+    *,
+    requested_width: int,
+    requested_height: int,
+    max_width: int,
+    max_height: int,
+) -> tuple[int, int]:
+    if requested_width <= max_width and requested_height <= max_height:
+        return requested_width, requested_height
+
+    scale = min(max_width / requested_width, max_height / requested_height)
+    width = max(2, int(requested_width * scale))
+    height = max(2, int(requested_height * scale))
+    if width % 2 != 0:
+        width -= 1
+    if height % 2 != 0:
+        height -= 1
+    return width, height
 
 
 class TrajectoryRecorder(OutputSink):
@@ -38,6 +111,75 @@ class RobotHandOutputSink(OutputSink):
 
     def close(self) -> None:
         self._visualizer.close()
+
+
+class RobotHandVideoOutputSink(OutputSink):
+    def __init__(
+        self,
+        hand_model: HandModel,
+        *,
+        output_path: str,
+        fps: int,
+        width: int = 1280,
+        height: int = 720,
+        codec: str = "mp4v",
+    ):
+        self._output_path = Path(output_path)
+        self._output_path.parent.mkdir(parents=True, exist_ok=True)
+        self._model = hand_model.model
+        self._data = mujoco.MjData(self._model)
+        width, height = _fit_video_size(
+            requested_width=width,
+            requested_height=height,
+            max_width=max(int(self._model.vis.global_.offwidth), 1),
+            max_height=max(int(self._model.vis.global_.offheight), 1),
+        )
+        self._frame_aspect_ratio = width / max(height, 1)
+        self._renderer = _create_offscreen_renderer(self._model, height=height, width=width)
+        self._camera = mujoco.MjvCamera()
+        mujoco.mjv_defaultCamera(self._camera)
+        configure_default_hand_camera(self._camera)
+        self._writer = cv2.VideoWriter(
+            str(self._output_path),
+            cv2.VideoWriter_fourcc(*codec),
+            float(max(fps, 1)),
+            (width, height),
+        )
+        if not self._writer.isOpened():
+            self._renderer.close()
+            raise RuntimeError(f"Cannot open replay video writer for: {self._output_path}")
+        self._frames_written = 0
+        self._camera_initialized = False
+        self._is_closed = False
+
+    @property
+    def is_running(self) -> bool:
+        return not self._is_closed
+
+    def on_result(self, result: RetargetingStepResult) -> None:
+        if self._is_closed:
+            return
+        self._data.qpos[:] = result.qpos
+        mujoco.mj_forward(self._model, self._data)
+        if not self._camera_initialized and _try_frame_hand_camera(
+            self._camera,
+            model=self._model,
+            data=self._data,
+            aspect_ratio=self._frame_aspect_ratio,
+        ):
+            self._camera_initialized = True
+        self._renderer.update_scene(self._data, camera=self._camera)
+        frame_rgb = self._renderer.render()
+        self._writer.write(cv2.cvtColor(frame_rgb, cv2.COLOR_RGB2BGR))
+        self._frames_written += 1
+
+    def close(self) -> None:
+        if self._is_closed:
+            return
+        self._writer.release()
+        self._renderer.close()
+        self._is_closed = True
+        print(f"Saved replay video ({self._frames_written} frames) to {self._output_path}")
 
 
 class AsyncLandmarkOutputSink(OutputSink, HandFrameSink):

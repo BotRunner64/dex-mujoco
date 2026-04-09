@@ -38,6 +38,21 @@ _BONE_COLORS = np.array([_LANDMARK_COLORS[end] for _, end in _HAND_CONNECTIONS],
 _IDENTITY_MAT = np.eye(3, dtype=np.float64).reshape(-1)
 _POINT_RADIUS = 0.006
 _BONE_RADIUS = 0.0035
+_CAMERA_MARGIN = 1.15
+_MIN_CAMERA_DISTANCE = 0.18
+_MIN_FRAMING_RADIUS = 0.01
+_DEFAULT_HAND_CAMERA = {
+    "distance": 0.55,
+    "azimuth": 145.0,
+    "elevation": -20.0,
+    "lookat": (0.0, 0.0, 0.0),
+}
+_DEFAULT_LANDMARK_CAMERA = {
+    "distance": 0.32,
+    "azimuth": 140.0,
+    "elevation": -24.0,
+    "lookat": (0.0, 0.0, 0.02),
+}
 _LANDMARK_VIEWER_XML = """
 <mujoco model="input_landmarks">
   <visual>
@@ -62,6 +77,131 @@ def _mujoco_key_callback(handler):
         handler(chr(keycode))
 
     return _callback
+
+
+def configure_free_camera(
+    camera,
+    *,
+    distance: float,
+    azimuth: float,
+    elevation: float,
+    lookat: tuple[float, float, float],
+) -> None:
+    camera.type = mujoco.mjtCamera.mjCAMERA_FREE
+    camera.distance = distance
+    camera.azimuth = azimuth
+    camera.elevation = elevation
+    camera.lookat[:] = np.asarray(lookat, dtype=np.float64)
+
+
+def configure_default_hand_camera(camera) -> None:
+    configure_free_camera(camera, **_DEFAULT_HAND_CAMERA)
+
+
+def _camera_aspect_ratio(model) -> float:
+    width = max(int(model.vis.global_.offwidth), 1)
+    height = max(int(model.vis.global_.offheight), 1)
+    return width / height
+
+
+def _camera_distance_for_radius(radius: float, *, fovy_degrees: float, aspect_ratio: float) -> float:
+    safe_radius = max(float(radius), _MIN_FRAMING_RADIUS)
+    half_vertical = np.deg2rad(max(float(fovy_degrees), 1.0) * 0.5)
+    half_horizontal = np.arctan(np.tan(half_vertical) * max(float(aspect_ratio), 1e-3))
+    limiting_half_angle = max(min(half_vertical, half_horizontal), np.deg2rad(5.0))
+    return max(_MIN_CAMERA_DISTANCE, _CAMERA_MARGIN * safe_radius / np.sin(limiting_half_angle))
+
+
+def _compute_bounding_sphere(
+    points: np.ndarray,
+    *,
+    radii: np.ndarray | None = None,
+) -> tuple[np.ndarray, float]:
+    finite_points = np.asarray(points, dtype=np.float64)
+    if finite_points.ndim != 2 or finite_points.shape[1] != 3 or finite_points.shape[0] == 0:
+        raise ValueError(f"Expected points with shape (N, 3), got {finite_points.shape}")
+
+    if radii is None:
+        safe_radii = np.zeros(finite_points.shape[0], dtype=np.float64)
+    else:
+        safe_radii = np.asarray(radii, dtype=np.float64).reshape(-1)
+        if safe_radii.shape[0] != finite_points.shape[0]:
+            raise ValueError("radii must have the same length as points")
+
+    mask = np.isfinite(finite_points).all(axis=1) & np.isfinite(safe_radii) & (safe_radii >= 0.0)
+    if not np.any(mask):
+        return np.zeros(3, dtype=np.float64), 0.0
+
+    finite_points = finite_points[mask]
+    safe_radii = safe_radii[mask]
+    mins = np.min(finite_points - safe_radii[:, None], axis=0)
+    maxs = np.max(finite_points + safe_radii[:, None], axis=0)
+    center = 0.5 * (mins + maxs)
+    radius = np.max(np.linalg.norm(finite_points - center, axis=1) + safe_radii)
+    return center, float(radius)
+
+
+def _try_frame_camera_to_points(
+    camera,
+    *,
+    model,
+    points: np.ndarray,
+    radii: np.ndarray | None = None,
+    azimuth: float,
+    elevation: float,
+    aspect_ratio: float | None = None,
+) -> bool:
+    lookat, radius = _compute_bounding_sphere(points, radii=radii)
+    if radius <= 0.0:
+        return False
+
+    configure_free_camera(
+        camera,
+        distance=_camera_distance_for_radius(
+            radius,
+            fovy_degrees=float(model.vis.global_.fovy),
+            aspect_ratio=_camera_aspect_ratio(model) if aspect_ratio is None else float(aspect_ratio),
+        ),
+        azimuth=azimuth,
+        elevation=elevation,
+        lookat=tuple(lookat),
+    )
+    return True
+
+
+def _try_frame_hand_camera(camera, *, model, data, aspect_ratio: float | None = None) -> bool:
+    centers: list[np.ndarray] = []
+    radii: list[float] = []
+
+    for geom_id in range(model.ngeom):
+        geom_type = int(model.geom_type[geom_id])
+        if geom_type in {
+            int(mujoco.mjtGeom.mjGEOM_PLANE),
+            int(mujoco.mjtGeom.mjGEOM_HFIELD),
+        }:
+            continue
+
+        radius = float(model.geom_rbound[geom_id])
+        if radius <= 0.0:
+            radius = float(np.linalg.norm(model.geom_size[geom_id]))
+        if not np.isfinite(radius) or radius <= 0.0:
+            continue
+
+        centers.append(np.array(data.geom_xpos[geom_id], copy=True))
+        radii.append(radius)
+
+    if not centers:
+        return False
+
+    return _try_frame_camera_to_points(
+        camera,
+        model=model,
+        points=np.asarray(centers, dtype=np.float64),
+        radii=np.asarray(radii, dtype=np.float64),
+        azimuth=_DEFAULT_HAND_CAMERA["azimuth"],
+        elevation=_DEFAULT_HAND_CAMERA["elevation"],
+        aspect_ratio=aspect_ratio,
+    )
 
 
 class _ManagedPassiveViewer:
@@ -119,7 +259,8 @@ class HandVisualizer:
             show_left_ui=False,
             show_right_ui=False,
         )
-        self._configure_camera(distance=0.55, azimuth=145.0, elevation=-20.0, lookat=(0.0, 0.0, 0.0))
+        self._configure_camera(**_DEFAULT_HAND_CAMERA)
+        self._camera_initialized = False
 
     def _configure_camera(
         self,
@@ -130,11 +271,13 @@ class HandVisualizer:
         lookat: tuple[float, float, float],
     ) -> None:
         with self.viewer.lock():
-            self.viewer.cam.type = mujoco.mjtCamera.mjCAMERA_FREE
-            self.viewer.cam.distance = distance
-            self.viewer.cam.azimuth = azimuth
-            self.viewer.cam.elevation = elevation
-            self.viewer.cam.lookat[:] = np.asarray(lookat, dtype=np.float64)
+            configure_free_camera(
+                self.viewer.cam,
+                distance=distance,
+                azimuth=azimuth,
+                elevation=elevation,
+                lookat=lookat,
+            )
         self.viewer.sync(state_only=True)
 
     def update(self, qpos: np.ndarray):
@@ -142,6 +285,8 @@ class HandVisualizer:
         with self.viewer.lock():
             self.data.qpos[:] = qpos
             mujoco.mj_forward(self.model, self.data)
+            if not self._camera_initialized and _try_frame_hand_camera(self.viewer.cam, model=self.model, data=self.data):
+                self._camera_initialized = True
         self.viewer.sync()
 
     @property
@@ -173,7 +318,8 @@ class LandmarkVisualizer:
                 f"MuJoCo viewer user scene only supports {self.viewer.user_scn.maxgeom} geoms, "
                 f"but landmark overlay needs {self._max_overlay_geoms}"
             )
-        self._configure_camera(distance=0.32, azimuth=140.0, elevation=-24.0, lookat=(0.0, 0.0, 0.02))
+        self._configure_camera(**_DEFAULT_LANDMARK_CAMERA)
+        self._camera_initialized = False
 
     def _configure_camera(
         self,
@@ -184,17 +330,27 @@ class LandmarkVisualizer:
         lookat: tuple[float, float, float],
     ) -> None:
         with self.viewer.lock():
-            self.viewer.cam.type = mujoco.mjtCamera.mjCAMERA_FREE
-            self.viewer.cam.distance = distance
-            self.viewer.cam.azimuth = azimuth
-            self.viewer.cam.elevation = elevation
-            self.viewer.cam.lookat[:] = np.asarray(lookat, dtype=np.float64)
+            configure_free_camera(
+                self.viewer.cam,
+                distance=distance,
+                azimuth=azimuth,
+                elevation=elevation,
+                lookat=lookat,
+            )
         self.viewer.sync(state_only=True)
 
     def update(self, landmarks: np.ndarray):
         """Update visualization with input-hand landmarks."""
         with self.viewer.lock():
             mujoco.mj_forward(self.model, self.data)
+            if not self._camera_initialized and _try_frame_camera_to_points(
+                self.viewer.cam,
+                model=self.model,
+                points=landmarks,
+                azimuth=_DEFAULT_LANDMARK_CAMERA["azimuth"],
+                elevation=_DEFAULT_LANDMARK_CAMERA["elevation"],
+            ):
+                self._camera_initialized = True
             self._update_landmark_overlay(landmarks)
         self.viewer.sync()
 

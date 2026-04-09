@@ -2,6 +2,8 @@ import sys
 import threading
 from pathlib import Path
 
+import pytest
+
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from dex_mujoco import visualization
@@ -44,3 +46,36 @@ def test_managed_passive_viewer_waits_for_render_thread_on_close(monkeypatch):
 
     assert handle.closed is True
     assert worker.is_alive() is False
+
+
+def test_compute_bounding_sphere_accounts_for_geom_radii():
+    points = visualization.np.array(
+        [
+            [0.0, 0.0, 0.0],
+            [0.2, 0.0, 0.0],
+        ],
+        dtype=visualization.np.float64,
+    )
+    center, radius = visualization._compute_bounding_sphere(
+        points,
+        radii=visualization.np.array([0.05, 0.1], dtype=visualization.np.float64),
+    )
+
+    visualization.np.testing.assert_allclose(center, [0.125, 0.0, 0.0])
+    assert radius == pytest.approx(0.175)
+
+
+def test_camera_distance_for_radius_scales_with_scene_size():
+    near = visualization._camera_distance_for_radius(
+        0.05,
+        fovy_degrees=45.0,
+        aspect_ratio=4.0 / 3.0,
+    )
+    far = visualization._camera_distance_for_radius(
+        0.15,
+        fovy_degrees=45.0,
+        aspect_ratio=4.0 / 3.0,
+    )
+
+    assert near >= visualization._MIN_CAMERA_DISTANCE
+    assert far > near
