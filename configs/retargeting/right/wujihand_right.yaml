@@ -1,0 +1,6 @@
+extends: "../base/wujihand.yaml"
+
+hand:
+  name: "wujihand_right"
+  side: "right"
+  mjcf_path: "../../../assets/mjcf/wujihand_right/model.xml"

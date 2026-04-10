@@ -158,6 +158,20 @@ def test_model_name_resolver_supports_left_right_word_prefixes():
     )
 
 
+def test_model_name_resolver_supports_wujihand_finger_names():
+    model = mujoco.MjModel.from_xml_path("assets/mjcf/wujihand_right/model.xml")
+    resolver = ModelNameResolver(model, hand_side="right")
+
+    assert (
+        resolver.resolve("finger3_link2", obj_type=mujoco.mjtObj.mjOBJ_BODY, role="Body")
+        == "right_finger3_link2"
+    )
+    assert (
+        resolver.resolve("finger3_link4_tip", obj_type=mujoco.mjtObj.mjOBJ_SITE, role="Site")
+        == "right_finger3_link4_tip"
+    )
+
+
 def test_revo2_model_preserves_mimic_equalities():
     hand_model = HandModel("assets/mjcf/revo2_right/model.xml")
 

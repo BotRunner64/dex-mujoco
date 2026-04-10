@@ -16,6 +16,10 @@ assets/mjcf/*
 !assets/mjcf/revo2_right/**
 !assets/mjcf/revo2_left/
 !assets/mjcf/revo2_left/**
+!assets/mjcf/wujihand_right/
+!assets/mjcf/wujihand_right/**
+!assets/mjcf/wujihand_left/
+!assets/mjcf/wujihand_left/**
 *.pickle
 .claude/
 .codex

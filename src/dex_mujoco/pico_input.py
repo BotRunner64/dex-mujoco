@@ -51,10 +51,49 @@ _UNITY_TO_RH = np.array(
     dtype=np.float64,
 )
 
+_SDK_LOCK = threading.Lock()
+_SDK_REFCOUNT = 0
+
 
 def _transform_positions(positions: np.ndarray) -> np.ndarray:
     """Transform (N,3) positions from Unity to right-hand coordinate system."""
     return positions @ _UNITY_TO_RH.T
+
+
+def _acquire_xrobotoolkit_sdk():
+    global _SDK_REFCOUNT
+
+    try:
+        import xrobotoolkit_sdk as xrt
+    except ImportError as exc:
+        raise RuntimeError(
+            "xrobotoolkit_sdk is not installed. "
+            "Install it to use PICO hand tracking input."
+        ) from exc
+
+    with _SDK_LOCK:
+        if _SDK_REFCOUNT == 0:
+            xrt.init()
+        _SDK_REFCOUNT += 1
+
+    return xrt
+
+
+def _release_xrobotoolkit_sdk(xrt) -> None:
+    global _SDK_REFCOUNT
+
+    should_close = False
+    with _SDK_LOCK:
+        if _SDK_REFCOUNT <= 0:
+            return
+        _SDK_REFCOUNT -= 1
+        should_close = _SDK_REFCOUNT == 0
+
+    if should_close:
+        try:
+            xrt.close()
+        except BaseException:
+            pass
 
 
 def pico_hand_to_landmarks(hand_state: np.ndarray) -> np.ndarray:
@@ -76,17 +115,7 @@ class PicoHandProvider:
     def __init__(self, hand_side: str, timeout: float = 60.0):
         self.hand_side = normalize_hand_side(hand_side)
         self._timeout = timeout
-
-        try:
-            import xrobotoolkit_sdk as xrt
-        except ImportError as exc:
-            raise RuntimeError(
-                "xrobotoolkit_sdk is not installed. "
-                "Install it to use PICO hand tracking input."
-            ) from exc
-
-        self._xrt = xrt
-        self._xrt.init()
+        self._xrt = _acquire_xrobotoolkit_sdk()
 
         self._running = True
         self._lock = threading.Lock()
@@ -151,10 +180,7 @@ class PicoHandProvider:
         with self._cond:
             self._cond.notify_all()
         self._thread.join(timeout=2.0)
-        try:
-            self._xrt.close()
-        except BaseException:
-            pass
+        _release_xrobotoolkit_sdk(self._xrt)
 
     def stats_snapshot(self) -> dict[str, object]:
         with self._lock:

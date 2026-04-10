@@ -212,6 +212,15 @@ python scripts/acceptance_check.py \
 
 - `dexhand021`：来自 `dexrobot_urdf`，建议使用 `*_simplified.urdf`
 - `revo2`：来自 `revo2_description`
+- `wujihand`：来自 `wuji-hand-description`，仓库内已带左右手 MJCF 与配置
+
+例如直接跑 `Wuji` 右手配置：
+
+```bash
+dex-retarget webcam \
+    --config configs/retargeting/right/wujihand_right.yaml \
+    --hand right
+```
 
 配置文件格式参考 `configs/retargeting/right/linkerhand_l20_right.yaml`，核心字段：
 

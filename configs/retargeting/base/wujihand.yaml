@@ -1,0 +1,158 @@
+# Retargeting config: MediaPipe -> Wuji Hand
+# Finger numbering:
+#   1=thumb, 2=index, 3=middle, 4=ring, 5=pinky
+
+hand:
+  name: "wujihand_right"
+  side: "right"
+  mjcf_path: "../../../assets/mjcf/wujihand_right/model.xml"
+
+retargeting:
+  type: "vector"
+
+  human_vector_pairs:
+    # Thumb
+    - [0, 4]
+    - [1, 4]
+    - [1, 2]
+    - [1, 3]
+    - [2, 3]
+    - [2, 4]
+    - [3, 4]
+    # Index
+    - [5, 6]
+    - [6, 8]
+    - [7, 8]
+    # Middle
+    - [9, 10]
+    - [10, 12]
+    - [11, 12]
+    # Ring
+    - [13, 14]
+    - [14, 16]
+    - [15, 16]
+    # Little
+    - [17, 18]
+    - [18, 20]
+    - [19, 20]
+
+  origin_link_names:
+    - "world"
+    - "finger1_link1"
+    - "finger1_link1"
+    - "finger1_link1"
+    - "finger1_link2"
+    - "finger1_link2"
+    - "finger1_link3"
+    - "finger2_link1"
+    - "finger2_link2"
+    - "finger2_link3"
+    - "finger3_link1"
+    - "finger3_link2"
+    - "finger3_link3"
+    - "finger4_link1"
+    - "finger4_link2"
+    - "finger4_link3"
+    - "finger5_link1"
+    - "finger5_link2"
+    - "finger5_link3"
+
+  task_link_names:
+    - "finger1_link4_tip"
+    - "finger1_link4_tip"
+    - "finger1_link2"
+    - "finger1_link3"
+    - "finger1_link3"
+    - "finger1_link4_tip"
+    - "finger1_link4_tip"
+    - "finger2_link2"
+    - "finger2_link4_tip"
+    - "finger2_link4_tip"
+    - "finger3_link2"
+    - "finger3_link4_tip"
+    - "finger3_link4_tip"
+    - "finger4_link2"
+    - "finger4_link4_tip"
+    - "finger4_link4_tip"
+    - "finger5_link2"
+    - "finger5_link4_tip"
+    - "finger5_link4_tip"
+
+  origin_link_types:
+    - "body"
+    - "body"
+    - "body"
+    - "body"
+    - "body"
+    - "body"
+    - "body"
+    - "body"
+    - "body"
+    - "body"
+    - "body"
+    - "body"
+    - "body"
+    - "body"
+    - "body"
+    - "body"
+    - "body"
+    - "body"
+    - "body"
+
+  task_link_types:
+    - "site"
+    - "site"
+    - "body"
+    - "body"
+    - "body"
+    - "site"
+    - "site"
+    - "body"
+    - "site"
+    - "site"
+    - "body"
+    - "site"
+    - "site"
+    - "body"
+    - "site"
+    - "site"
+    - "body"
+    - "site"
+    - "site"
+
+  vector_weights:
+    - 2.2
+    - 1.8
+    - 1.2
+    - 1.2
+    - 1.2
+    - 1.4
+    - 1.4
+    - 1.0
+    - 1.0
+    - 0.8
+    - 1.0
+    - 1.0
+    - 0.8
+    - 1.0
+    - 1.0
+    - 0.8
+    - 1.0
+    - 1.0
+    - 0.8
+
+  vector_loss:
+    type: "residual"
+    huber_delta: 0.02
+    scaling: 1.0
+    scale_landmarks: [0, 9]
+    scale_bodies: ["world", "finger3_link2"]
+    scale_body_types: ["body", "body"]
+
+  preprocess:
+    temporal_filter_alpha: 0.50
+
+  solver:
+    max_iterations: 60
+    norm_delta: 0.004
+    output_alpha: 0.80
