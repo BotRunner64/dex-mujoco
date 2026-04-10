@@ -12,6 +12,9 @@ from dex_mujoco.domain import HandCommand, HandState
 from dex_mujoco.infrastructure.hand_model import HandModel
 
 
+_MIN_ACTUATED_DOF_DAMPING = 0.02
+
+
 class MujocoSimController:
     """Runs a fixed-rate MuJoCo simulation against target joint positions."""
 
@@ -24,6 +27,8 @@ class MujocoSimController:
     ):
         self._hand_model = HandModel(mjcf_path)
         self._actuator_qpos_indices = self._hand_model.get_actuator_qpos_indices()
+        self._actuator_dof_indices = self._get_actuator_dof_indices()
+        self._ensure_minimum_damping()
         self._control_rate_hz = int(control_rate_hz)
         self._sim_rate_hz = int(sim_rate_hz)
         self._control_interval_steps = max(int(round(self._sim_rate_hz / max(self._control_rate_hz, 1))), 1)
@@ -40,6 +45,21 @@ class MujocoSimController:
         )
         self._running = False
         self._thread: threading.Thread | None = None
+
+    def _get_actuator_dof_indices(self) -> np.ndarray:
+        indices: list[int] = []
+        for actuator_id in range(self._hand_model.nu):
+            joint_id = int(self._hand_model.model.actuator_trnid[actuator_id][0])
+            indices.append(int(self._hand_model.model.jnt_dofadr[joint_id]))
+        return np.asarray(indices, dtype=np.int32)
+
+    def _ensure_minimum_damping(self) -> None:
+        if self._actuator_dof_indices.size == 0:
+            return
+        damping = self._hand_model.model.dof_damping
+        if np.any(damping[self._actuator_dof_indices] > 0.0):
+            return
+        damping[self._actuator_dof_indices] = _MIN_ACTUATED_DOF_DAMPING
 
     @property
     def is_running(self) -> bool:

@@ -135,6 +135,17 @@ def test_mujoco_sim_controller_applies_ctrlrange_clipped_targets():
     assert controller.is_running is False
 
 
+def test_mujoco_sim_controller_adds_minimum_damping_for_undamped_models():
+    controller = MujocoSimController("assets/mjcf/linkerhand_l20_right/model.xml", control_rate_hz=50, sim_rate_hz=200)
+
+    damping = controller._hand_model.model.dof_damping[controller._actuator_dof_indices]
+
+    assert damping.shape[0] == controller._hand_model.nu
+    assert np.all(damping >= 0.02)
+
+    controller.close()
+
+
 def test_build_runtime_session_uses_controlled_session_for_sim(monkeypatch):
     captured = {}
 
