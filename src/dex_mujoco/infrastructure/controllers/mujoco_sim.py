@@ -12,7 +12,8 @@ from dex_mujoco.domain import HandCommand, HandState
 from dex_mujoco.infrastructure.hand_model import HandModel
 
 
-_MIN_ACTUATED_DOF_DAMPING = 0.02
+_MIN_ACTUATED_DOF_DAMPING = 0.75
+_MAX_POSITION_ACTUATOR_KP = 5.0
 
 
 class MujocoSimController:
@@ -29,6 +30,7 @@ class MujocoSimController:
         self._actuator_qpos_indices = self._hand_model.get_actuator_qpos_indices()
         self._actuator_dof_indices = self._get_actuator_dof_indices()
         self._ensure_minimum_damping()
+        self._soften_position_actuators()
         self._control_rate_hz = int(control_rate_hz)
         self._sim_rate_hz = int(sim_rate_hz)
         self._control_interval_steps = max(int(round(self._sim_rate_hz / max(self._control_rate_hz, 1))), 1)
@@ -57,9 +59,17 @@ class MujocoSimController:
         if self._actuator_dof_indices.size == 0:
             return
         damping = self._hand_model.model.dof_damping
-        if np.any(damping[self._actuator_dof_indices] > 0.0):
-            return
-        damping[self._actuator_dof_indices] = _MIN_ACTUATED_DOF_DAMPING
+        damping[self._actuator_dof_indices] = np.maximum(
+            damping[self._actuator_dof_indices],
+            _MIN_ACTUATED_DOF_DAMPING,
+        )
+
+    def _soften_position_actuators(self) -> None:
+        gainprm = self._hand_model.model.actuator_gainprm
+        biasprm = self._hand_model.model.actuator_biasprm
+        softened_kp = np.minimum(gainprm[:, 0], _MAX_POSITION_ACTUATOR_KP)
+        gainprm[:, 0] = softened_kp
+        biasprm[:, 1] = -softened_kp
 
     @property
     def is_running(self) -> bool:

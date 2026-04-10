@@ -141,7 +141,19 @@ def test_mujoco_sim_controller_adds_minimum_damping_for_undamped_models():
     damping = controller._hand_model.model.dof_damping[controller._actuator_dof_indices]
 
     assert damping.shape[0] == controller._hand_model.nu
-    assert np.all(damping >= 0.02)
+    assert np.all(damping >= 0.75)
+
+    controller.close()
+
+
+def test_mujoco_sim_controller_softens_position_actuator_kp():
+    controller = MujocoSimController("assets/mjcf/linkerhand_l20_right/model.xml", control_rate_hz=50, sim_rate_hz=200)
+
+    kp = controller._hand_model.model.actuator_gainprm[:, 0]
+    bias = controller._hand_model.model.actuator_biasprm[:, 1]
+
+    assert np.all(kp <= 5.0)
+    assert np.allclose(bias, -kp)
 
     controller.close()
 
