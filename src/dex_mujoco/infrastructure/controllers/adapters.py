@@ -17,6 +17,13 @@ from dex_mujoco.paths import DEFAULT_LINKERHAND_SDK_PATH
 _FAMILY_PATTERN = re.compile(r"(o6|l6|l7|l10|l20|l21|l25|g20)", re.IGNORECASE)
 _SUPPORTED_FAMILIES = {"O6", "L6", "L7", "L10", "L20", "L21", "L25", "G20"}
 
+# LinkerHand 电机默认参数（来自 LinkerHand SDK 规格说明）
+# 速度单位：内部 SDK 单位（约对应 °/s 量级），180 是厂商推荐的安全默认速度
+_DEFAULT_MOTOR_SPEED = 180
+# 扭矩单位：内部 SDK 单位；L6/L7/O6 系列力矩较小，其他系列（L10+）使用更高扭矩
+_DEFAULT_MOTOR_TORQUE_SMALL = 180   # L6, O6, L7 系列
+_DEFAULT_MOTOR_TORQUE_LARGE = 200   # L10, L20, L21, L25, G20 系列
+
 
 def infer_linkerhand_model_family(hand_name: str) -> str:
     match = _FAMILY_PATTERN.search(hand_name)
@@ -45,18 +52,18 @@ def _load_mapping_module(sdk_root: str):
 
 def _default_speed_for_family(family: str) -> list[int]:
     if family in {"O6", "L6"}:
-        return [180] * 6
+        return [_DEFAULT_MOTOR_SPEED] * 6
     if family == "L7":
-        return [180] * 7
-    return [180] * 5
+        return [_DEFAULT_MOTOR_SPEED] * 7
+    return [_DEFAULT_MOTOR_SPEED] * 5
 
 
 def _default_torque_for_family(family: str) -> list[int]:
     if family in {"O6", "L6"}:
-        return [180] * 6
+        return [_DEFAULT_MOTOR_TORQUE_SMALL] * 6
     if family == "L7":
-        return [180] * 7
-    return [200] * 5
+        return [_DEFAULT_MOTOR_TORQUE_SMALL] * 7
+    return [_DEFAULT_MOTOR_TORQUE_LARGE] * 5
 
 
 @dataclass(slots=True)

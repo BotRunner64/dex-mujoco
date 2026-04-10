@@ -18,6 +18,7 @@ from dex_mujoco.domain import (
 )
 
 from .bihand_engine import BiHandRetargetingEngine
+from .session import _close_resource, _start_frame_sink_thread as _start_frame_sink_thread_impl
 
 
 class BiHandRetargetingSession:
@@ -155,39 +156,11 @@ class BiHandRetargetingSession:
         *,
         stop_event: Event,
     ) -> Thread | None:
-        if not self.frame_sinks:
-            return None
-
-        snapshot_fn = getattr(source, "latest_bihand_frame_snapshot", None)
-        if not callable(snapshot_fn):
-            return None
-
-        def _worker() -> None:
-            last_frame_index = -1
-            sleep_s = 1.0 / max(source.fps, 1)
-            while not stop_event.is_set():
-                snapshot = snapshot_fn()
-                if snapshot is not None:
-                    frame_index, frame = snapshot
-                    if frame_index != last_frame_index:
-                        last_frame_index = frame_index
-                        for sink in self.frame_sinks:
-                            if sink.is_running:
-                                sink.on_frame(frame)
-                if not self.is_running:
-                    break
-                time.sleep(sleep_s)
-
-        thread = Thread(target=_worker, name="dex-mujoco-bihand-frame-sink", daemon=True)
-        thread.start()
-        return thread
-
-
-def _close_resource(resource: object) -> None:
-    close_fn = getattr(resource, "close", None)
-    if not callable(close_fn):
-        return
-    try:
-        close_fn()
-    except BaseException as exc:
-        print(f"Warning: failed to close {type(resource).__name__}: {exc}")
+        return _start_frame_sink_thread_impl(
+            source,
+            self.frame_sinks,
+            lambda: self.is_running,
+            stop_event=stop_event,
+            snapshot_attr_name="latest_bihand_frame_snapshot",
+            thread_name="dex-mujoco-bihand-frame-sink",
+        )

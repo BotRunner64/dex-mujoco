@@ -134,32 +134,51 @@ class RetargetingSession:
         *,
         stop_event: Event,
     ) -> Thread | None:
-        if not self.frame_sinks:
-            return None
+        return _start_frame_sink_thread(
+            source,
+            self.frame_sinks,
+            lambda: self.is_running,
+            stop_event=stop_event,
+            snapshot_attr_name="latest_hand_frame_snapshot",
+            thread_name="dex-mujoco-frame-sink",
+        )
 
-        snapshot_fn = getattr(source, "latest_hand_frame_snapshot", None)
-        if not callable(snapshot_fn):
-            return None
 
-        def _worker() -> None:
-            last_frame_index = -1
-            sleep_s = 1.0 / max(source.fps, 1)
-            while not stop_event.is_set():
-                snapshot = snapshot_fn()
-                if snapshot is not None:
-                    frame_index, frame = snapshot
-                    if frame_index != last_frame_index:
-                        last_frame_index = frame_index
-                        for sink in self.frame_sinks:
-                            if sink.is_running:
-                                sink.on_frame(frame)
-                if not self.is_running:
-                    break
-                time.sleep(sleep_s)
+def _start_frame_sink_thread(
+    source: object,
+    frame_sinks: list,
+    is_running_fn: Callable[[], bool],
+    *,
+    stop_event: Event,
+    snapshot_attr_name: str,
+    thread_name: str,
+) -> Thread | None:
+    if not frame_sinks:
+        return None
 
-        thread = Thread(target=_worker, name="dex-mujoco-frame-sink", daemon=True)
-        thread.start()
-        return thread
+    snapshot_fn = getattr(source, snapshot_attr_name, None)
+    if not callable(snapshot_fn):
+        return None
+
+    def _worker() -> None:
+        last_frame_index = -1
+        sleep_s = 1.0 / max(source.fps, 1)  # type: ignore[union-attr]
+        while not stop_event.is_set():
+            snapshot = snapshot_fn()
+            if snapshot is not None:
+                frame_index, frame = snapshot
+                if frame_index != last_frame_index:
+                    last_frame_index = frame_index
+                    for sink in frame_sinks:
+                        if sink.is_running:
+                            sink.on_frame(frame)
+            if not is_running_fn():
+                break
+            time.sleep(sleep_s)
+
+    thread = Thread(target=_worker, name=thread_name, daemon=True)
+    thread.start()
+    return thread
 
 
 def _close_resource(resource: object) -> None:

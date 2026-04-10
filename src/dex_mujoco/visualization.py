@@ -66,6 +66,8 @@ _BONE_RADIUS = 0.0035
 _CAMERA_MARGIN = 1.15
 _MIN_CAMERA_DISTANCE = 0.18
 _MIN_FRAMING_RADIUS = 0.01
+# Worker 进程主循环轮询间隔（120Hz）——匹配 MuJoCo passive viewer 的渲染帧率
+_VIEWER_LOOP_PERIOD_S = 1.0 / 120.0
 _DEFAULT_HAND_CAMERA = {
     "distance": 0.55,
     "azimuth": 145.0,
@@ -857,11 +859,53 @@ def _landmark_viewer_worker(frame_queue: mp.queues.Queue, window_title: str | No
                 visualizer.update(latest_landmarks)
             else:
                 visualizer.update(latest_landmarks)
-                time.sleep(1.0 / 120.0)
+                time.sleep(_VIEWER_LOOP_PERIOD_S)
     except KeyboardInterrupt:
         return
     finally:
         visualizer.close()
+
+
+class _AsyncProcessHandle:
+    """Manages a one-item mp.Queue connected to a worker process.
+
+    Encapsulates the put_nowait/get_nowait/retry send pattern and the
+    sentinel-based shutdown sequence, so Async*Visualizer classes only
+    need to focus on payload construction.
+    """
+
+    def __init__(self, process: mp.Process, queue: "mp.queues.Queue") -> None:
+        self._process = process
+        self._queue = queue
+
+    @property
+    def is_running(self) -> bool:
+        return self._process.is_alive()
+
+    def send(self, payload: object) -> None:
+        """Send payload, dropping the oldest item if the queue is full."""
+        try:
+            self._queue.put_nowait(payload)
+            return
+        except queue.Full:
+            pass
+        try:
+            self._queue.get_nowait()
+        except queue.Empty:
+            pass
+        try:
+            self._queue.put_nowait(payload)
+        except queue.Full:
+            pass
+
+    def close(self) -> None:
+        if not self._process.is_alive():
+            return
+        self.send(None)  # sentinel tells worker to exit
+        self._process.join(timeout=2.0)
+        if self._process.is_alive():
+            self._process.terminate()
+            self._process.join(timeout=1.0)
 
 
 class AsyncLandmarkVisualizer:
@@ -876,49 +920,17 @@ class AsyncLandmarkVisualizer:
             name="dex-mujoco-landmark-viewer",
         )
         self._process.start()
+        self._handle = _AsyncProcessHandle(self._process, self._queue)
 
     @property
     def is_running(self) -> bool:
-        return self._process.is_alive()
+        return self._handle.is_running
 
     def update(self, landmarks: np.ndarray) -> None:
-        payload = np.asarray(landmarks, dtype=np.float64)
-        try:
-            self._queue.put_nowait(payload)
-            return
-        except queue.Full:
-            pass
-
-        try:
-            self._queue.get_nowait()
-        except queue.Empty:
-            pass
-
-        try:
-            self._queue.put_nowait(payload)
-        except queue.Full:
-            pass
+        self._handle.send(np.asarray(landmarks, dtype=np.float64))
 
     def close(self) -> None:
-        if not self._process.is_alive():
-            return
-
-        try:
-            self._queue.put_nowait(None)
-        except queue.Full:
-            try:
-                self._queue.get_nowait()
-            except queue.Empty:
-                pass
-            try:
-                self._queue.put_nowait(None)
-            except queue.Full:
-                pass
-
-        self._process.join(timeout=2.0)
-        if self._process.is_alive():
-            self._process.terminate()
-            self._process.join(timeout=1.0)
+        self._handle.close()
 
 
 def _robot_hand_viewer_worker(
@@ -950,7 +962,7 @@ def _robot_hand_viewer_worker(
                 visualizer.update(latest_qpos)
             else:
                 visualizer.update(latest_qpos)
-                time.sleep(1.0 / 120.0)
+                time.sleep(_VIEWER_LOOP_PERIOD_S)
     except KeyboardInterrupt:
         return
     finally:
@@ -975,49 +987,17 @@ class AsyncRobotHandVisualizer:
             name="dex-mujoco-robot-hand-viewer",
         )
         self._process.start()
+        self._handle = _AsyncProcessHandle(self._process, self._queue)
 
     @property
     def is_running(self) -> bool:
-        return self._process.is_alive()
+        return self._handle.is_running
 
     def update(self, qpos: np.ndarray) -> None:
-        payload = np.asarray(qpos, dtype=np.float64)
-        try:
-            self._queue.put_nowait(payload)
-            return
-        except queue.Full:
-            pass
-
-        try:
-            self._queue.get_nowait()
-        except queue.Empty:
-            pass
-
-        try:
-            self._queue.put_nowait(payload)
-        except queue.Full:
-            pass
+        self._handle.send(np.asarray(qpos, dtype=np.float64))
 
     def close(self) -> None:
-        if not self._process.is_alive():
-            return
-
-        try:
-            self._queue.put_nowait(None)
-        except queue.Full:
-            try:
-                self._queue.get_nowait()
-            except queue.Empty:
-                pass
-            try:
-                self._queue.put_nowait(None)
-            except queue.Full:
-                pass
-
-        self._process.join(timeout=2.0)
-        if self._process.is_alive():
-            self._process.terminate()
-            self._process.join(timeout=1.0)
+        self._handle.close()
 
 
 def _bihand_landmark_viewer_worker(frame_queue: mp.queues.Queue) -> None:
@@ -1043,7 +1023,7 @@ def _bihand_landmark_viewer_worker(frame_queue: mp.queues.Queue) -> None:
                 visualizer.update(latest_landmarks)
             else:
                 visualizer.update(latest_landmarks)
-                time.sleep(1.0 / 120.0)
+                time.sleep(_VIEWER_LOOP_PERIOD_S)
     except KeyboardInterrupt:
         return
     finally:
@@ -1062,46 +1042,14 @@ class AsyncBiHandLandmarkVisualizer:
             name="dex-mujoco-bihand-landmark-viewer",
         )
         self._process.start()
+        self._handle = _AsyncProcessHandle(self._process, self._queue)
 
     @property
     def is_running(self) -> bool:
-        return self._process.is_alive()
+        return self._handle.is_running
 
     def update(self, landmarks: np.ndarray) -> None:
-        payload = np.asarray(landmarks, dtype=np.float64)
-        try:
-            self._queue.put_nowait(payload)
-            return
-        except queue.Full:
-            pass
-
-        try:
-            self._queue.get_nowait()
-        except queue.Empty:
-            pass
-
-        try:
-            self._queue.put_nowait(payload)
-        except queue.Full:
-            pass
+        self._handle.send(np.asarray(landmarks, dtype=np.float64))
 
     def close(self) -> None:
-        if not self._process.is_alive():
-            return
-
-        try:
-            self._queue.put_nowait(None)
-        except queue.Full:
-            try:
-                self._queue.get_nowait()
-            except queue.Empty:
-                pass
-            try:
-                self._queue.put_nowait(None)
-            except queue.Full:
-                pass
-
-        self._process.join(timeout=2.0)
-        if self._process.is_alive():
-            self._process.terminate()
-            self._process.join(timeout=1.0)
+        self._handle.close()
