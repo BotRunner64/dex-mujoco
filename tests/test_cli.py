@@ -51,12 +51,13 @@ def test_replay_command_uses_realtime_replay_by_default():
     assert args.loop is True
 
 
-def test_replay_command_accepts_dump_video_path():
+def test_dump_video_command_requires_recording_and_output_paths():
     parser = build_parser()
-    args = parser.parse_args(["replay", "--recording", "session.pkl", "--dump-video", "recordings/replay.mp4"])
+    args = parser.parse_args(["dump-video", "--recording", "session.pkl", "--output", "recordings/replay.mp4"])
 
-    assert args.command == "replay"
-    assert args.dump_video == "recordings/replay.mp4"
+    assert args.command == "dump-video"
+    assert args.recording == "session.pkl"
+    assert args.output == "recordings/replay.mp4"
 
 
 def test_run_replay_uses_landmark_retarget_and_sim_viewers_for_sim_backend(monkeypatch):
@@ -90,7 +91,6 @@ def test_run_replay_uses_landmark_retarget_and_sim_viewers_for_sim_backend(monke
     args = SimpleNamespace(
         recording="recordings/session.pkl",
         record_output=None,
-        dump_video=None,
         backend="sim",
         hand="right",
         loop=False,
@@ -101,6 +101,54 @@ def test_run_replay_uses_landmark_retarget_and_sim_viewers_for_sim_backend(monke
 
     assert calls["session_kwargs"]["include_landmark_viewer"] is True
     assert calls["session_kwargs"]["include_sim_state_viewer"] is True
+
+
+def test_run_dump_video_uses_offline_video_only_session(monkeypatch):
+    calls = {}
+
+    class _FakeSource:
+        fps = 30
+        source_desc = "recordings/session.pkl"
+        recording_metadata = {
+            "input_source": "recordings/session.pkl",
+            "input_type": "webcam",
+            "num_detected": 12,
+        }
+
+    class _FakeSession:
+        def run(self, source, **kwargs):
+            calls["run"] = kwargs
+            return SimpleNamespace(num_frames=12, num_detected=12, source_desc=source.source_desc, input_type="replay")
+
+    def _fake_build_session(*args, **kwargs):
+        calls["session_kwargs"] = kwargs
+        return _FakeSession()
+
+    monkeypatch.setattr(cli_module, "create_recording_source", lambda **kwargs: _FakeSource())
+    monkeypatch.setattr(cli_module, "_build_engine", lambda args, **kwargs: SimpleNamespace(describe=lambda: {"model_name": "m", "dof": 1, "vector_pairs": 1}))
+    monkeypatch.setattr(cli_module, "_build_session", _fake_build_session)
+    monkeypatch.setattr(cli_module, "_print_startup", lambda *args, **kwargs: None)
+    monkeypatch.setattr(cli_module, "_finalize_run", lambda *args, **kwargs: None)
+
+    args = SimpleNamespace(
+        recording="recordings/session.pkl",
+        output="recordings/replay.mp4",
+        hand="right",
+        config="unused.yaml",
+    )
+
+    cli_module._run_dump_video(args)
+
+    assert calls["session_kwargs"] == {
+        "visualize": False,
+        "show_preview": False,
+        "video_output_path": "recordings/replay.mp4",
+        "video_output_fps": 30,
+    }
+    assert calls["run"] == {
+        "input_type": "replay",
+        "realtime": False,
+    }
 
 
 def test_bihand_default_config_replaces_single_hand_default():
@@ -201,78 +249,6 @@ def test_build_session_adds_single_viewer_sink_for_viewer_backend(monkeypatch):
         ("landmark", "Input Landmarks"),
         ("robot", engine.hand_model, None, None, "Retargeting"),
     ]
-
-
-def test_build_session_falls_back_to_video_only_when_visualization_unavailable(monkeypatch, capsys):
-    class _FakeVideoSink:
-        def __init__(self, hand_model, *, output_path, fps):
-            self.hand_model = hand_model
-            self.output_path = output_path
-            self.fps = fps
-
-        @property
-        def is_running(self):
-            return True
-
-        def on_result(self, result):
-            return None
-
-        def close(self):
-            return None
-
-    monkeypatch.setattr(cli_module, "AsyncLandmarkOutputSink", lambda: (_ for _ in ()).throw(RuntimeError("no display")))
-    monkeypatch.setattr(cli_module, "RobotHandVideoOutputSink", _FakeVideoSink)
-
-    engine = SimpleNamespace(hand_model=object())
-    session = cli_module._build_session(
-        engine,
-        visualize=True,
-        show_preview=False,
-        video_output_path="recordings/replay.mp4",
-        video_output_fps=30,
-        allow_visualization_fallback=True,
-    )
-
-    assert len(session.frame_sinks) == 0
-    assert len(session.sinks) == 1
-    assert isinstance(session.sinks[0], _FakeVideoSink)
-    assert "visualization disabled during replay video dump" in capsys.readouterr().out
-
-
-def test_build_session_skips_visualization_when_glfw_unavailable(monkeypatch, capsys):
-    class _FakeVideoSink:
-        def __init__(self, hand_model, *, output_path, fps):
-            self.hand_model = hand_model
-            self.output_path = output_path
-            self.fps = fps
-
-        @property
-        def is_running(self):
-            return True
-
-        def on_result(self, result):
-            return None
-
-        def close(self):
-            return None
-
-    monkeypatch.setattr(cli_module, "_interactive_visualization_available", lambda: (False, "GLFW is unavailable"))
-    monkeypatch.setattr(cli_module, "RobotHandVideoOutputSink", _FakeVideoSink)
-
-    engine = SimpleNamespace(hand_model=object())
-    session = cli_module._build_session(
-        engine,
-        visualize=True,
-        show_preview=False,
-        video_output_path="recordings/replay.mp4",
-        video_output_fps=30,
-        allow_visualization_fallback=True,
-    )
-
-    assert len(session.frame_sinks) == 0
-    assert len(session.sinks) == 1
-    assert isinstance(session.sinks[0], _FakeVideoSink)
-    assert "visualization disabled during replay video dump: GLFW is unavailable" in capsys.readouterr().out
 
 
 def test_fit_video_size_scales_to_offscreen_limits():

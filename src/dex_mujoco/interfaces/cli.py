@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import warnings
 
 from dex_mujoco.application import (
     BiHandRetargetingEngine,
@@ -47,26 +46,6 @@ def _close_resource(resource: object) -> None:
     close_fn = getattr(resource, "close", None)
     if callable(close_fn):
         close_fn()
-
-
-def _interactive_visualization_available() -> tuple[bool, str | None]:
-    try:
-        import glfw
-    except Exception as exc:
-        return False, str(exc)
-
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore")
-        try:
-            available = bool(glfw.init())
-        except Exception as exc:
-            return False, str(exc)
-
-    if not available:
-        return False, "GLFW is unavailable"
-
-    glfw.terminate()
-    return True, None
 
 
 def _parse_hand_selector(value: str) -> str:
@@ -125,6 +104,36 @@ def _add_bihand_common_args(parser: argparse.ArgumentParser) -> None:
     )
 
 
+def _add_dump_video_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "-c",
+        "--config",
+        default=str(DEFAULT_CONFIG_PATH),
+        help="Path to retargeting config YAML",
+    )
+    parser.add_argument(
+        "-H",
+        "--hand",
+        type=_parse_hand_selector,
+        choices=["left", "right", "both"],
+        default="right",
+        help="Hand side for the current channel, or 'both' for bi-hand mode",
+    )
+    parser.add_argument("--recording", required=True, help="Path to a saved hand-tracking recording")
+    parser.add_argument("--output", required=True, help="Output MP4 path for the rendered replay video")
+
+
+def _add_bihand_dump_video_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "-c",
+        "--config",
+        default=str(DEFAULT_BIHAND_CONFIG_PATH),
+        help="Path to bi-hand retargeting config YAML",
+    )
+    parser.add_argument("--recording", required=True, help="Path to a saved bi-hand tracking recording")
+    parser.add_argument("--output", required=True, help="Output MP4 path for the rendered replay video")
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="dex-retarget", description="Unified dex hand retargeting CLI")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -151,11 +160,9 @@ def build_parser() -> argparse.ArgumentParser:
     _add_common_args(replay)
     replay.add_argument("--recording", required=True, help="Path to a saved hand-tracking recording")
     replay.add_argument("--loop", action="store_true", help="Loop the saved recording indefinitely")
-    replay.add_argument(
-        "--dump-video",
-        default=None,
-        help="Optional MP4 path for dumping the robot-hand replay video while replaying",
-    )
+
+    dump_video = subparsers.add_parser("dump-video", help="Render a replay recording to MP4 as fast as possible")
+    _add_dump_video_args(dump_video)
 
     pico = subparsers.add_parser("pico", help="Retarget from live PICO hand tracking via XRoboToolkit")
     _add_common_args(pico)
@@ -208,11 +215,12 @@ def build_parser() -> argparse.ArgumentParser:
     _add_bihand_common_args(bihand_replay)
     bihand_replay.add_argument("--recording", required=True, help="Path to a saved bi-hand tracking recording")
     bihand_replay.add_argument("--loop", action="store_true", help="Loop the saved recording indefinitely")
-    bihand_replay.add_argument(
-        "--dump-video",
-        default=None,
-        help="Optional MP4 path for dumping the bi-hand replay video while replaying",
+
+    bihand_dump_video = bihand_subparsers.add_parser(
+        "dump-video",
+        help="Render a bi-hand replay recording to MP4 as fast as possible",
     )
+    _add_bihand_dump_video_args(bihand_dump_video)
 
     bihand_pico = bihand_subparsers.add_parser("pico", help="Retarget both hands from live PICO hand tracking")
     _add_bihand_common_args(bihand_pico)
@@ -265,15 +273,9 @@ def _build_session(
     key_callback=None,
     video_output_path: str | None = None,
     video_output_fps: int | None = None,
-    allow_visualization_fallback: bool = False,
 ) -> RetargetingSession:
     sinks = []
     frame_sinks = []
-    if visualize and allow_visualization_fallback and video_output_path is not None:
-        visualize_available, reason = _interactive_visualization_available()
-        if not visualize_available:
-            visualize = False
-            print(f"Warning: visualization disabled during replay video dump: {reason}")
     if visualize:
         try:
             frame_sinks.append(AsyncLandmarkOutputSink(window_title="Input Landmarks"))
@@ -305,11 +307,7 @@ def _build_session(
                 _close_resource(sink)
             for sink in reversed(sinks):
                 _close_resource(sink)
-            frame_sinks = []
-            sinks = []
-            if not allow_visualization_fallback or video_output_path is None:
-                raise
-            print(f"Warning: visualization disabled during replay video dump: {exc}")
+            raise
     if video_output_path is not None:
         if video_output_fps is None:
             raise ValueError("video_output_fps is required when video_output_path is provided")
@@ -362,7 +360,6 @@ def _build_runtime_session(
     key_callback=None,
     video_output_path: str | None = None,
     video_output_fps: int | None = None,
-    allow_visualization_fallback: bool = False,
     include_landmark_viewer: bool = True,
     include_sim_state_viewer: bool = True,
 ):
@@ -375,16 +372,10 @@ def _build_runtime_session(
             key_callback=key_callback,
             video_output_path=video_output_path,
             video_output_fps=video_output_fps,
-            allow_visualization_fallback=allow_visualization_fallback,
         )
 
     sinks = []
     frame_sinks = []
-    if visualize and allow_visualization_fallback and video_output_path is not None:
-        visualize_available, reason = _interactive_visualization_available()
-        if not visualize_available:
-            visualize = False
-            print(f"Warning: visualization disabled during replay video dump: {reason}")
     if visualize:
         try:
             if include_landmark_viewer:
@@ -418,11 +409,7 @@ def _build_runtime_session(
                 _close_resource(sink)
             for sink in reversed(sinks):
                 _close_resource(sink)
-            frame_sinks = []
-            sinks = []
-            if not allow_visualization_fallback or video_output_path is None:
-                raise
-            print(f"Warning: visualization disabled during replay video dump: {exc}")
+            raise
     if video_output_path is not None:
         if video_output_fps is None:
             raise ValueError("video_output_fps is required when video_output_path is provided")
@@ -452,15 +439,9 @@ def _build_bihand_session(
     key_callback=None,
     video_output_path: str | None = None,
     video_output_fps: int | None = None,
-    allow_visualization_fallback: bool = False,
 ) -> BiHandRetargetingSession:
     sinks = []
     frame_sinks = []
-    if visualize and allow_visualization_fallback and video_output_path is not None:
-        visualize_available, reason = _interactive_visualization_available()
-        if not visualize_available:
-            visualize = False
-            print(f"Warning: visualization disabled during replay video dump: {reason}")
     if visualize:
         try:
             frame_sinks.append(
@@ -491,11 +472,7 @@ def _build_bihand_session(
                 _close_resource(sink)
             for sink in reversed(sinks):
                 _close_resource(sink)
-            frame_sinks = []
-            sinks = []
-            if not allow_visualization_fallback or video_output_path is None:
-                raise
-            print(f"Warning: visualization disabled during replay video dump: {exc}")
+            raise
     if video_output_path is not None:
         if video_output_fps is None:
             raise ValueError("video_output_fps is required when video_output_path is provided")
@@ -650,9 +627,6 @@ def _run_replay(args: argparse.Namespace) -> None:
         args,
         visualize=True,
         show_preview=False,
-        video_output_path=args.dump_video,
-        video_output_fps=source.fps,
-        allow_visualization_fallback=True,
         include_landmark_viewer=True,
         include_sim_state_viewer=True,
     )
@@ -662,8 +636,6 @@ def _run_replay(args: argparse.Namespace) -> None:
         f"Recorded source: {metadata.get('input_source', args.recording)} | Recorded input type: {metadata.get('input_type', 'unknown')}",
         f"Recorded fps: {source.fps} | Recorded detections: {metadata.get('num_detected', 0)}",
     ]
-    if args.dump_video:
-        extra_lines.append(f"Replay video dump: {args.dump_video}")
     _print_startup(
         engine,
         source_desc=source.source_desc,
@@ -671,6 +643,32 @@ def _run_replay(args: argparse.Namespace) -> None:
         extra_lines=extra_lines,
     )
     summary = session.run(source, input_type="replay", realtime=True, loop=args.loop)
+    _finalize_run(args, summary=summary, source=source)
+
+
+def _run_dump_video(args: argparse.Namespace) -> None:
+    source = create_recording_source(recording_path=args.recording)
+    engine = _build_engine(args, input_type="replay")
+    session = _build_session(
+        engine,
+        visualize=False,
+        show_preview=False,
+        video_output_path=args.output,
+        video_output_fps=source.fps,
+    )
+    metadata = getattr(source, "recording_metadata", {})
+    _print_startup(
+        engine,
+        source_desc=source.source_desc,
+        tracking_desc=f"Rendering replay video for hand: {display_hand_side(args.hand)} | Source fps: {source.fps}",
+        extra_lines=[
+            f"Recorded source: {metadata.get('input_source', args.recording)} | Recorded input type: {metadata.get('input_type', 'unknown')}",
+            f"Recorded fps: {source.fps} | Recorded detections: {metadata.get('num_detected', 0)}",
+            f"Video output: {args.output}",
+            "Render mode: offline",
+        ],
+    )
+    summary = session.run(source, input_type="replay", realtime=False)
     _finalize_run(args, summary=summary, source=source)
 
 
@@ -815,17 +813,12 @@ def _run_bihand_replay(args: argparse.Namespace) -> None:
         engine,
         visualize=True,
         show_preview=False,
-        video_output_path=args.dump_video,
-        video_output_fps=source.fps,
-        allow_visualization_fallback=True,
     )
     metadata = getattr(source, "recording_metadata", {})
     extra_lines = [
         f"Recorded source: {metadata.get('input_source', args.recording)} | Recorded input type: {metadata.get('input_type', 'unknown')}",
         f"Recorded fps: {source.fps} | Recorded detections: {metadata.get('num_detected', 0)}",
     ]
-    if args.dump_video:
-        extra_lines.append(f"Replay video dump: {args.dump_video}")
     _print_bihand_startup(
         engine,
         source_desc=source.source_desc,
@@ -833,6 +826,32 @@ def _run_bihand_replay(args: argparse.Namespace) -> None:
         extra_lines=extra_lines,
     )
     summary = session.run(source, input_type="replay", realtime=True, loop=args.loop)
+    _finalize_bihand_run(args, summary=summary, source=source)
+
+
+def _run_bihand_dump_video(args: argparse.Namespace) -> None:
+    source = create_bihand_recording_source(recording_path=args.recording)
+    engine = _build_bihand_engine(args, input_type="replay")
+    session = _build_bihand_session(
+        engine,
+        visualize=False,
+        show_preview=False,
+        video_output_path=args.output,
+        video_output_fps=source.fps,
+    )
+    metadata = getattr(source, "recording_metadata", {})
+    _print_bihand_startup(
+        engine,
+        source_desc=source.source_desc,
+        tracking_desc=f"Rendering replay video for hands: Left+Right | Source fps: {source.fps}",
+        extra_lines=[
+            f"Recorded source: {metadata.get('input_source', args.recording)} | Recorded input type: {metadata.get('input_type', 'unknown')}",
+            f"Recorded fps: {source.fps} | Recorded detections: {metadata.get('num_detected', 0)}",
+            f"Video output: {args.output}",
+            "Render mode: offline",
+        ],
+    )
+    summary = session.run(source, input_type="replay", realtime=False)
     _finalize_bihand_run(args, summary=summary, source=source)
 
 
@@ -933,6 +952,13 @@ def main(argv: list[str] | None = None) -> None:
             return
         _run_replay(args)
         return
+    if args.command == "dump-video":
+        if args.hand == "both":
+            _use_default_bihand_config_if_needed(args)
+            _run_bihand_dump_video(args)
+            return
+        _run_dump_video(args)
+        return
     if args.command == "pico":
         if args.hand == "both":
             if args.backend != "viewer":
@@ -960,6 +986,9 @@ def main(argv: list[str] | None = None) -> None:
             return
         if args.bihand_command == "replay":
             _run_bihand_replay(args)
+            return
+        if args.bihand_command == "dump-video":
+            _run_bihand_dump_video(args)
             return
         if args.bihand_command == "pico":
             _run_bihand_pico(args)

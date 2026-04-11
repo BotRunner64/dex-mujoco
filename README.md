@@ -106,12 +106,12 @@ dex-retarget replay \
 ```
 
 `replay` 默认就会按录制时的 fps 实时回放。
-如果想在回放时同步导出机器人手的 MuJoCo 视频，可以加：
+如果想离线导出机器人手的 MuJoCo 视频，使用单独命令：
 
 ```bash
-dex-retarget replay \
+dex-retarget dump-video \
     --recording recordings/webcam_hand.pkl \
-    --dump-video recordings/webcam_hand_replay.mp4
+    --output recordings/webcam_hand_replay.mp4
 ```
 
 ### 5.2 hc_mocap 手部输入
