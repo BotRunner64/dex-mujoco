@@ -27,3 +27,5 @@ MUJOCO_LOG.TXT
 third_party/
 recordings/*.mp4
 recordings/.*.mp4
+recordings/samples/
+recordings/full_renders/

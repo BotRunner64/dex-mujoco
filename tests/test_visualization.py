@@ -2,6 +2,7 @@ import sys
 import threading
 from pathlib import Path
 
+import numpy as np
 import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
@@ -162,7 +163,36 @@ def test_camera_distance_for_radius_scales_with_scene_size():
     assert far > near
 
 
+def test_landmark_camera_defaults_match_single_hand_view():
+    assert visualization._DEFAULT_LANDMARK_CAMERA["distance"] == visualization._DEFAULT_HAND_CAMERA["distance"]
+    assert visualization._DEFAULT_LANDMARK_CAMERA["azimuth"] == visualization._DEFAULT_HAND_CAMERA["azimuth"]
+    assert visualization._DEFAULT_LANDMARK_CAMERA["elevation"] == visualization._DEFAULT_HAND_CAMERA["elevation"]
+    assert visualization._DEFAULT_LANDMARK_CAMERA["lookat"] == visualization._DEFAULT_HAND_CAMERA["lookat"]
+
+
 def test_bihand_landmark_camera_defaults_match_bihand_view():
     assert visualization._DEFAULT_BIHAND_LANDMARK_CAMERA["distance"] == visualization._DEFAULT_BIHAND_CAMERA["distance"]
     assert visualization._DEFAULT_BIHAND_LANDMARK_CAMERA["azimuth"] == visualization._DEFAULT_BIHAND_CAMERA["azimuth"]
     assert visualization._DEFAULT_BIHAND_LANDMARK_CAMERA["elevation"] == visualization._DEFAULT_BIHAND_CAMERA["elevation"]
+
+
+
+def test_append_single_landmark_geoms_appends_after_existing_scene_geoms():
+    model = visualization.mujoco.MjModel.from_xml_string(visualization._LANDMARK_VIEWER_XML)
+    scene = visualization.mujoco.MjvScene(model, maxgeom=128)
+    scene.ngeom = 2
+
+    visualization._append_single_landmark_geoms(scene, np.zeros((21, 3), dtype=np.float64))
+
+    assert scene.ngeom == 2 + 21 + len(visualization._HAND_CONNECTIONS)
+
+
+def test_append_bihand_landmark_geoms_skips_nan_hand_points():
+    model = visualization.mujoco.MjModel.from_xml_string(visualization._LANDMARK_VIEWER_XML)
+    scene = visualization.mujoco.MjvScene(model, maxgeom=128)
+    hands = np.full((2, 21, 3), np.nan, dtype=np.float64)
+    hands[0] = 0.0
+
+    visualization._append_bihand_landmark_geoms(scene, hands)
+
+    assert scene.ngeom == 21 + len(visualization._HAND_CONNECTIONS)
