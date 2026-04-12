@@ -7,7 +7,7 @@ from .artifacts import (
     save_hand_recording_artifact,
     save_trajectory_artifact,
 )
-from .config_loader import load_retargeting_config
+from .config_loader import load_bihand_config, load_retargeting_config
 from .controllers import LinkerHandModelAdapter, LinkerHandSdkController, MujocoSimController, infer_linkerhand_model_family
 from .hand_model import HandModel
 from .model_name_resolver import ModelNameResolver
@@ -75,6 +75,7 @@ __all__ = [
     "create_pico_source",
     "create_recording_source",
     "load_bihand_recording_artifact",
+    "load_bihand_config",
     "load_hand_recording_artifact",
     "load_retargeting_config",
     "save_bihand_recording_artifact",

@@ -107,7 +107,7 @@ def print_thumb_state(model, data, prefix=""):
 
 def test_human_transform():
     """Show what human thumb landmarks map to after transformation."""
-    from somehand.vector_retargeting import preprocess_landmarks, _OPERATOR2ROBOT_RIGHT
+    from somehand.domain.preprocessing import _OPERATOR2ROBOT_RIGHT, preprocess_landmarks
 
     print(f"\n{'='*60}")
     print("Human landmark transformation test")

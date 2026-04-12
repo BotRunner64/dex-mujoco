@@ -9,12 +9,13 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 import somehand.interfaces.cli as cli_module
 import somehand.infrastructure.sinks as sinks_module
 from somehand.cli import build_parser
-from somehand.domain import BiHandFrame, BiHandRetargetingConfig, BiHandSourceFrame, HandFrame, RetargetingConfig
 from somehand.infrastructure.artifacts import load_bihand_recording_artifact, save_bihand_recording_artifact
+from somehand.infrastructure.config_loader import load_bihand_config, load_retargeting_config
 from somehand.infrastructure.hand_model import HandModel
 from somehand.infrastructure.sources import RecordingBiHandTrackingSource, create_bihand_recording_source
 from somehand.paths import DEFAULT_BIHAND_CONFIG_PATH, DEFAULT_HC_MOCAP_REFERENCE_BVH
 from somehand.visualization import BiHandScene
+from somehand.domain import BiHandFrame, BiHandSourceFrame, HandFrame
 
 
 def _hand_frame(hand_side: str) -> HandFrame:
@@ -75,7 +76,7 @@ def test_bihand_cli_uses_repo_defaults():
 
 
 def test_bihand_config_loads_default_yaml():
-    config = BiHandRetargetingConfig.load(str(DEFAULT_BIHAND_CONFIG_PATH))
+    config = load_bihand_config(str(DEFAULT_BIHAND_CONFIG_PATH))
 
     assert config.left_config_path.endswith("configs/retargeting/left/linkerhand_l20_left.yaml")
     assert config.right_config_path.endswith("configs/retargeting/right/linkerhand_l20_right.yaml")
@@ -99,9 +100,9 @@ def test_all_bihand_configs_load_successfully():
     config_paths = sorted(Path("configs/retargeting/bihand").glob("*_bihand.yaml"))
     assert config_paths
     for config_path in config_paths:
-        config = BiHandRetargetingConfig.load(str(config_path))
-        left_config = RetargetingConfig.load(config.left_config_path)
-        right_config = RetargetingConfig.load(config.right_config_path)
+        config = load_bihand_config(str(config_path))
+        left_config = load_retargeting_config(config.left_config_path)
+        right_config = load_retargeting_config(config.right_config_path)
         assert left_config.hand.side == "left"
         assert right_config.hand.side == "right"
 
@@ -423,9 +424,9 @@ def test_bihand_recording_source_replays_saved_frames(tmp_path):
 
 
 def test_bihand_scene_compiles_combined_mujoco_model():
-    config = BiHandRetargetingConfig.load(str(DEFAULT_BIHAND_CONFIG_PATH))
-    left_hand_model = HandModel(RetargetingConfig.load(config.left_config_path).hand.mjcf_path)
-    right_hand_model = HandModel(RetargetingConfig.load(config.right_config_path).hand.mjcf_path)
+    config = load_bihand_config(str(DEFAULT_BIHAND_CONFIG_PATH))
+    left_hand_model = HandModel(load_retargeting_config(config.left_config_path).hand.mjcf_path)
+    right_hand_model = HandModel(load_retargeting_config(config.right_config_path).hand.mjcf_path)
     scene = BiHandScene(left_hand_model, right_hand_model)
 
     assert scene.model.nq == left_hand_model.nq + right_hand_model.nq
@@ -435,9 +436,9 @@ def test_bihand_scene_compiles_combined_mujoco_model():
 
 
 def test_bihand_scene_applies_configured_root_quaternions():
-    config = BiHandRetargetingConfig.load(str(DEFAULT_BIHAND_CONFIG_PATH))
-    left_hand_model = HandModel(RetargetingConfig.load(config.left_config_path).hand.mjcf_path)
-    right_hand_model = HandModel(RetargetingConfig.load(config.right_config_path).hand.mjcf_path)
+    config = load_bihand_config(str(DEFAULT_BIHAND_CONFIG_PATH))
+    left_hand_model = HandModel(load_retargeting_config(config.left_config_path).hand.mjcf_path)
+    right_hand_model = HandModel(load_retargeting_config(config.right_config_path).hand.mjcf_path)
     scene = BiHandScene(
         left_hand_model,
         right_hand_model,

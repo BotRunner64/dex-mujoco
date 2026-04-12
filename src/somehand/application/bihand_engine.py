@@ -10,6 +10,7 @@ from somehand.domain import (
     BiHandRetargetingResult,
     RetargetingStepResult,
 )
+from somehand.infrastructure.config_loader import load_bihand_config
 
 from .engine import RetargetingEngine
 
@@ -36,7 +37,7 @@ class BiHandRetargetingEngine:
 
     @classmethod
     def from_config_path(cls, config_path: str, *, input_type: str) -> "BiHandRetargetingEngine":
-        return cls(BiHandRetargetingConfig.load(config_path), input_type=input_type)
+        return cls(load_bihand_config(config_path), input_type=input_type)
 
     def describe(self) -> dict[str, object]:
         return {

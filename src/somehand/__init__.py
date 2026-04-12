@@ -8,6 +8,7 @@ from somehand.application import (
     RetargetingSession,
 )
 from somehand.domain import BiHandRetargetingConfig, ControllerConfig, RetargetingConfig
+from somehand.infrastructure.config_loader import load_bihand_config, load_retargeting_config
 
 __all__ = [
     "BiHandRetargetingConfig",
@@ -15,6 +16,8 @@ __all__ = [
     "BiHandRetargetingSession",
     "ControlledRetargetingSession",
     "ControllerConfig",
+    "load_bihand_config",
+    "load_retargeting_config",
     "RetargetingConfig",
     "RetargetingEngine",
     "RetargetingSession",

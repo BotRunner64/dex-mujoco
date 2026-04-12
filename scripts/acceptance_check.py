@@ -17,7 +17,8 @@ from somehand.acceptance import (
     synthetic_hand_pose,
     throughput_score,
 )
-from somehand.domain import RetargetingConfig, normalize_hand_side
+from somehand.domain import normalize_hand_side
+from somehand.infrastructure.config_loader import load_retargeting_config
 from somehand.hand_detector import HandDetector
 from somehand.infrastructure.hand_model import HandModel
 from somehand.infrastructure.vector_solver import VectorRetargeter
@@ -109,7 +110,7 @@ def main():
     parser.add_argument("--min-video-cos", type=float, default=0.68)
     args = parser.parse_args()
 
-    config = RetargetingConfig.load(args.config)
+    config = load_retargeting_config(args.config)
     hand_model = HandModel(config.hand.mjcf_path)
     retargeter = VectorRetargeter(hand_model, config)
     vector_pairs = [(a, b) for a, b in config.human_vector_pairs]

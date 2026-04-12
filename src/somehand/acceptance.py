@@ -28,7 +28,7 @@ from .constants import (
     THUMB_TIP,
     WRIST,
 )
-from .vector_retargeting import compute_target_directions
+from .domain.preprocessing import compute_target_directions
 _LEFT_RIGHT_ROBOT_MIRROR = np.diag([1.0, -1.0, 1.0]).astype(np.float64)
 
 

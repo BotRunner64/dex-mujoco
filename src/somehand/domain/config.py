@@ -45,34 +45,6 @@ class ControllerConfig:
 
 
 @dataclass
-class PinchConfig:
-    enabled: bool = False
-    d1: float = 0.03
-    d2: float = 0.06
-    weight: float = 5.0
-    thumb_weight_boost: float = 1.5
-    fingertip_sites: list[str] = field(default_factory=list)
-
-
-@dataclass
-class PositionConstraint:
-    landmark: int = 0
-    body: str = ""
-    body_type: str = "body"
-    weight: float = 1.0
-
-
-@dataclass
-class PositionConfig:
-    enabled: bool = False
-    weight: float = 8.0
-    scale_landmarks: list[int] = field(default_factory=lambda: [0, 9])
-    scale_bodies: list[str] = field(default_factory=lambda: ["world", "middle_proximal"])
-    scale_body_types: list[str] = field(default_factory=lambda: ["body", "body"])
-    constraints: list[PositionConstraint] = field(default_factory=list)
-
-
-@dataclass
 class VectorLossConfig:
     type: str = "direction"
     huber_delta: float = 0.02
@@ -103,16 +75,8 @@ class RetargetingConfig:
     vector_weights: list[float] = field(default_factory=list)
     vector_loss: VectorLossConfig = field(default_factory=VectorLossConfig)
     angle_constraints: list[AngleConstraint] = field(default_factory=list)
-    pinch: PinchConfig = field(default_factory=PinchConfig)
-    position: PositionConfig = field(default_factory=PositionConfig)
     preprocess: PreprocessConfig = field(default_factory=PreprocessConfig)
     solver: SolverConfig = field(default_factory=SolverConfig)
-
-    @classmethod
-    def load(cls, config_path: str) -> "RetargetingConfig":
-        from somehand.infrastructure.config_loader import load_retargeting_config
-
-        return load_retargeting_config(config_path)
 
     def validate(self) -> None:
         if not self.hand.side:
@@ -205,12 +169,6 @@ class BiHandRetargetingConfig:
     left_config_path: str = ""
     right_config_path: str = ""
     viewer: BiHandViewerConfig = field(default_factory=BiHandViewerConfig)
-
-    @classmethod
-    def load(cls, config_path: str) -> "BiHandRetargetingConfig":
-        from somehand.infrastructure.config_loader import load_bihand_config
-
-        return load_bihand_config(config_path)
 
     def validate(self) -> None:
         if not self.left_config_path:

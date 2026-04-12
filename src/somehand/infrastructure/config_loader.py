@@ -12,9 +12,6 @@ from somehand.domain.config import (
     BiHandViewerConfig,
     ControllerConfig,
     HandConfig,
-    PinchConfig,
-    PositionConfig,
-    PositionConstraint,
     PreprocessConfig,
     RetargetingConfig,
     SolverConfig,
@@ -125,36 +122,10 @@ def load_retargeting_config(config_path: str) -> RetargetingConfig:
         )
         for item in retargeting_data.get("angle_constraints", [])
     ]
-
-    position_data = retargeting_data.get("position_constraints", {})
-    if position_data and position_data.get("enabled", False):
-        config.position = PositionConfig(
-            enabled=True,
-            weight=position_data.get("weight", 8.0),
-            scale_landmarks=position_data.get("scale_landmarks", [0, 9]),
-            scale_bodies=position_data.get("scale_bodies", ["world", "middle_proximal"]),
-            scale_body_types=position_data.get("scale_body_types", ["body", "body"]),
-            constraints=[
-                PositionConstraint(
-                    landmark=item["landmark"],
-                    body=item["body"],
-                    body_type=item.get("body_type", "body"),
-                    weight=item.get("weight", 1.0),
-                )
-                for item in position_data.get("constraints", [])
-            ],
-        )
-
-    pinch_data = retargeting_data.get("pinch", {})
-    if pinch_data:
-        config.pinch = PinchConfig(
-            enabled=pinch_data.get("enabled", False),
-            d1=pinch_data.get("d1", 0.03),
-            d2=pinch_data.get("d2", 0.06),
-            weight=pinch_data.get("weight", 5.0),
-            thumb_weight_boost=pinch_data.get("thumb_weight_boost", 1.5),
-            fingertip_sites=pinch_data.get("fingertip_sites", []),
-        )
+    if "position_constraints" in retargeting_data:
+        raise ValueError("retargeting.position_constraints is no longer supported")
+    if "pinch" in retargeting_data:
+        raise ValueError("retargeting.pinch is no longer supported")
 
     preprocess_data = data.get("retargeting", {}).get("preprocess", {})
     config.preprocess = PreprocessConfig(

@@ -10,11 +10,11 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from somehand.application import ControlledRetargetingSession
 from somehand.domain import HandCommand
+from somehand.infrastructure.config_loader import load_retargeting_config
 from somehand.infrastructure.hand_model import HandModel
 from somehand.infrastructure.controllers.adapters import LinkerHandModelAdapter, infer_linkerhand_model_family
 from somehand.infrastructure.controllers.mujoco_sim import MujocoSimController
 import somehand.interfaces.cli as cli_module
-from somehand.retargeting_config import RetargetingConfig
 
 
 class _IdentityMapping:
@@ -64,7 +64,7 @@ def test_controller_config_parses_optional_fields(tmp_path):
         )
     )
 
-    config = RetargetingConfig.load(str(config_path))
+    config = load_retargeting_config(str(config_path))
     assert config.controller.backend == "sim"
     assert config.controller.control_rate_hz == 120
     assert config.controller.sim_rate_hz == 600

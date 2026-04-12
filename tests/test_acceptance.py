@@ -7,13 +7,12 @@ import pytest
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from somehand.acceptance import mirror_pose_to_left, rotation_matrix, synthetic_hand_pose
-from somehand.domain.preprocessing import preprocess_landmarks
+from somehand.domain.preprocessing import compute_target_directions, preprocess_landmarks
 from somehand.infrastructure.artifacts import load_hand_recording_artifact
+from somehand.infrastructure.config_loader import load_retargeting_config
 from somehand.infrastructure.hand_model import HandModel
 from somehand.infrastructure.vector_solver import VectorRetargeter
-from somehand.retargeting_config import RetargetingConfig
 from somehand.acceptance import current_alignment_metrics
-from somehand.vector_retargeting import compute_target_directions
 
 _LEFT_RIGHT_ROBOT_MIRROR = np.diag([1.0, -1.0, 1.0]).astype(np.float64)
 
@@ -27,13 +26,13 @@ def _asymmetric_pose() -> np.ndarray:
 
 
 def test_config_resolves_absolute_mjcf_path():
-    config = RetargetingConfig.load("configs/retargeting/right/linkerhand_l20_right.yaml")
+    config = load_retargeting_config("configs/retargeting/right/linkerhand_l20_right.yaml")
     assert Path(config.hand.mjcf_path).is_absolute()
     assert Path(config.hand.mjcf_path).exists()
 
 
 def test_wrist_local_preprocess_is_rotation_invariant():
-    config = RetargetingConfig.load("configs/retargeting/right/linkerhand_l20_right.yaml")
+    config = load_retargeting_config("configs/retargeting/right/linkerhand_l20_right.yaml")
     vector_pairs = [(a, b) for a, b in config.human_vector_pairs]
     base_pose = synthetic_hand_pose("open")
     base_dirs = compute_target_directions(
@@ -52,7 +51,7 @@ def test_wrist_local_preprocess_is_rotation_invariant():
 
 
 def test_left_and_right_inputs_match_after_mirroring():
-    config = RetargetingConfig.load("configs/retargeting/right/linkerhand_l20_right.yaml")
+    config = load_retargeting_config("configs/retargeting/right/linkerhand_l20_right.yaml")
     vector_pairs = [(a, b) for a, b in config.human_vector_pairs]
     right_pose = synthetic_hand_pose("pinch")
     left_pose = mirror_pose_to_left(right_pose)
@@ -113,7 +112,7 @@ def test_wrist_local_preprocess_matches_reference_operator_frame():
     reason="left-hand recording fixture not available",
 )
 def test_left_recording_replay_quality_regression():
-    config = RetargetingConfig.load("configs/retargeting/left/linkerhand_l20_left.yaml")
+    config = load_retargeting_config("configs/retargeting/left/linkerhand_l20_left.yaml")
     recording = load_hand_recording_artifact("recordings/pico_left.pkl")
     hand_model = HandModel(config.hand.mjcf_path)
     retargeter = VectorRetargeter(hand_model, config)

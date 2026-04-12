@@ -160,35 +160,6 @@ retargeting:
       joint: "pinky_dip"
       weight: 2.0
 
-  position_constraints:
-    enabled: true
-    weight: 8.0
-    scale_landmarks: [0, 9]
-    scale_bodies: ["world", "middle_proximal"]
-    scale_body_types: ["body", "body"]
-    constraints:
-      - landmark: 2                  # thumb MCP
-        body: "thumb_metacarpals"
-        body_type: "body"
-        weight: 1.0
-      - landmark: 4                  # thumb TIP
-        body: "thumb_distal_tip"
-        body_type: "site"
-        weight: 1.5
-
-  pinch:
-    enabled: true
-    d1: 0.03          # full pinch threshold (meters)
-    d2: 0.06          # no pinch threshold (meters)
-    weight: 5.0       # fingertip attraction loss weight
-    thumb_weight_boost: 1.5  # thumb vector weight multiplier during pinch
-    fingertip_sites:
-      - "thumb_distal_tip"
-      - "index_distal_tip"
-      - "middle_distal_tip"
-      - "ring_distal_tip"
-      - "pinky_distal_tip"
-
   preprocess:
     temporal_filter_alpha: 0.50
 

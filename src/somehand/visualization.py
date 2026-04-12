@@ -14,7 +14,7 @@ import mujoco
 import mujoco.viewer
 import numpy as np
 
-from .hand_model import HandModel
+from somehand.infrastructure.hand_model import HandModel
 
 _HAND_CONNECTIONS = (
     (0, 1), (1, 2), (2, 3), (3, 4),

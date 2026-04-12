@@ -20,6 +20,7 @@ from somehand.infrastructure import (
     BiHandVideoOutputSink,
     LinkerHandModelAdapter,
     LinkerHandSdkController,
+    MediaPipeInputSource,
     MujocoSimController,
     OpenCvPreviewWindow,
     RecordingBiHandTrackingSource,
@@ -38,7 +39,6 @@ from somehand.infrastructure import (
     save_bihand_recording_artifact,
     save_hand_recording_artifact,
 )
-from somehand.infrastructure.sources import MediaPipeInputSource
 from somehand.paths import DEFAULT_BIHAND_CONFIG_PATH, DEFAULT_CONFIG_PATH, DEFAULT_HC_MOCAP_REFERENCE_BVH
 
 

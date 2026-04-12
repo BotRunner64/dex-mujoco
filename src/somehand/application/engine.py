@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from somehand.domain import HandFrame, RetargetingConfig, RetargetingStepResult, preprocess_landmarks
+from somehand.infrastructure.config_loader import load_retargeting_config
 from somehand.infrastructure.hand_model import HandModel
 from somehand.infrastructure.vector_solver import VectorRetargeter
 
@@ -18,7 +19,7 @@ class RetargetingEngine:
 
     @classmethod
     def from_config_path(cls, config_path: str, *, input_type: str) -> "RetargetingEngine":
-        return cls(RetargetingConfig.load(config_path), input_type=input_type)
+        return cls(load_retargeting_config(config_path), input_type=input_type)
 
     def describe(self) -> dict[str, int | str]:
         return {
