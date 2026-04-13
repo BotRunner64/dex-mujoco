@@ -118,6 +118,7 @@ def main():
     parser.add_argument("--max-static-jitter", type=float, default=0.02)
     parser.add_argument("--min-weighted-cos", type=float, default=0.70)
     parser.add_argument("--min-pose-weighted-cos", type=float, default=0.68)
+    parser.add_argument("--min-thumb-frame-cos", type=float, default=0.85)
     parser.add_argument("--min-fps", type=float, default=20.0)
     parser.add_argument("--min-detection-rate", type=float, default=0.60)
     parser.add_argument("--min-video-cos", type=float, default=0.68)
@@ -161,12 +162,18 @@ def main():
     )
 
     quality = solver_quality_score(retargeter)
+    thumb_frame_ok = True
+    if "mean_thumb_frame_primary_cosine" in quality:
+        thumb_frame_ok = thumb_frame_ok and quality["mean_thumb_frame_primary_cosine"] >= args.min_thumb_frame_cos
+    if "mean_thumb_frame_secondary_cosine" in quality:
+        thumb_frame_ok = thumb_frame_ok and quality["mean_thumb_frame_secondary_cosine"] >= args.min_thumb_frame_cos
     results.append(
         AcceptanceResult(
             name="solver_quality",
             passed=(
                 quality["mean_weighted_cosine"] >= args.min_weighted_cos
                 and quality["min_weighted_cosine"] >= args.min_pose_weighted_cos
+                and thumb_frame_ok
             ),
             metrics=quality,
             detail="Synthetic representative poses should maintain stable direction alignment after solving.",

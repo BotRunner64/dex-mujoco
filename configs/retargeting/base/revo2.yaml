@@ -18,11 +18,11 @@ retargeting:
     - body
     - body
   preprocess:
-    temporal_filter_alpha: 0.45
+    temporal_filter_alpha: 0.65
   solver:
     max_iterations: 50
-    norm_delta: 0.004
-    output_alpha: 0.8
+    norm_delta: 0.001
+    output_alpha: 0.92
   vector_constraints:
   - human:
     - 0
@@ -59,36 +59,6 @@ retargeting:
     - world
     - thumb_distal_link_tip
     weight: 2.0
-    robot_types:
-    - body
-    - site
-  - human:
-    - 1
-    - 4
-    robot:
-    - thumb_metacarpal_link
-    - thumb_distal_link_tip
-    weight: 1.6
-    robot_types:
-    - body
-    - site
-  - human:
-    - 2
-    - 4
-    robot:
-    - thumb_proximal_link
-    - thumb_distal_link_tip
-    weight: 1.4
-    robot_types:
-    - body
-    - site
-  - human:
-    - 3
-    - 4
-    robot:
-    - thumb_distal_link
-    - thumb_distal_link_tip
-    weight: 1.2
     robot_types:
     - body
     - site
@@ -168,5 +138,18 @@ retargeting:
     robot_origin: thumb_metacarpal_link
     robot_primary: thumb_proximal_link
     robot_secondary: index_proximal_link
-    primary_weight: 1.2
-    secondary_weight: 1.0
+    primary_weight: 2.0
+    secondary_weight: 1.8
+  distance_constraints:
+  - human: [4, 8]
+    robot: [thumb_distal_link_tip, index_distal_link_tip]
+    robot_types: [site, site]
+    weight: 2000.0
+    scale: 1.0
+    threshold: 0.04
+  - human: [4, 12]
+    robot: [thumb_distal_link_tip, middle_distal_link_tip]
+    robot_types: [site, site]
+    weight: 1500.0
+    scale: 1.0
+    threshold: 0.04

@@ -11,6 +11,7 @@ from somehand.domain.config import (
     BiHandRetargetingConfig,
     BiHandViewerConfig,
     ControllerConfig,
+    DistanceConstraint,
     FrameConstraint,
     HandConfig,
     PreprocessConfig,
@@ -109,8 +110,21 @@ def load_retargeting_config(config_path: str) -> RetargetingConfig:
             robot=[str(value) for value in item["robot"]],
             robot_types=[str(value) for value in item.get("robot_types", ["body", "body"])],
             weight=float(item.get("weight", 1.0)),
+            loss_type=str(item.get("loss_type", "")),
+            loss_scale=float(item.get("loss_scale", 0.0)),
         )
         for item in retargeting_data.get("vector_constraints", [])
+    ]
+    config.distance_constraints = [
+        DistanceConstraint(
+            human=[int(value) for value in item["human"]],
+            robot=[str(value) for value in item["robot"]],
+            robot_types=[str(value) for value in item.get("robot_types", ["site", "site"])],
+            weight=float(item.get("weight", 1.0)),
+            scale=float(item.get("scale", 1.0)),
+            threshold=float(item.get("threshold", 0.04)),
+        )
+        for item in retargeting_data.get("distance_constraints", [])
     ]
     config.frame_constraints = [
         FrameConstraint(

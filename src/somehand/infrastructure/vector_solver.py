@@ -89,12 +89,16 @@ class VectorRetargeter:
         self._weights = np.array(config.vector_weights, dtype=np.float64)
         self._vector_loss_type = config.vector_loss.type
         self._vector_huber_delta = config.vector_loss.huber_delta
+        self._per_vector_loss_types: list[str] = [c.loss_type for c in config.vector_constraints]
+        self._per_vector_loss_scales: list[float] = [c.loss_scale for c in config.vector_constraints]
 
         self._target_directions: np.ndarray | None = None
         self._target_vectors: np.ndarray | None = None
         self._target_frame_primary_directions: np.ndarray | None = None
         self._target_frame_secondary_directions: np.ndarray | None = None
         self._target_angles: np.ndarray | None = None
+        self._target_distances: np.ndarray | None = None
+        self._raw_human_distances: np.ndarray | None = None
         self._last_qpos: np.ndarray | None = None
         self._vector_scale_landmark_idx = config.vector_loss.scale_landmarks[1]
         self._robot_vector_scale = 0.0
@@ -138,6 +142,27 @@ class VectorRetargeter:
             self._angle_weights.append(constraint.weight)
             self._angle_scales.append(float(constraint.scale))
             self._angle_inverts.append(bool(constraint.invert))
+
+        self._dist_human_pairs: list[tuple[int, int]] = []
+        self._dist_site_ids: list[tuple[int, bool, int, bool]] = []
+        self._dist_weights: list[float] = []
+        self._dist_scales: list[float] = []
+        self._dist_thresholds: list[float] = []
+        for constraint in config.distance_constraints:
+            self._dist_human_pairs.append((constraint.human[0], constraint.human[1]))
+            self._dist_weights.append(constraint.weight)
+            self._dist_scales.append(constraint.scale)
+            self._dist_thresholds.append(constraint.threshold)
+            ids: list[tuple[int, bool]] = []
+            for i, name in enumerate(constraint.robot):
+                is_site = constraint.robot_types[i] == "site"
+                obj_type = mujoco.mjtObj.mjOBJ_SITE if is_site else mujoco.mjtObj.mjOBJ_BODY
+                resolved_name = self._name_resolver.resolve(name, obj_type=obj_type, role="Distance constraint")
+                link_id = mujoco.mj_name2id(self.model, obj_type, resolved_name)
+                if link_id < 0:
+                    raise ValueError(f"Distance constraint site '{name}' not found in model")
+                ids.append((link_id, is_site))
+            self._dist_site_ids.append((ids[0][0], ids[0][1], ids[1][0], ids[1][1]))
 
         self._frame_names: list[str] = []
         self._frame_human_indices: list[tuple[int, int, int]] = []
@@ -209,7 +234,6 @@ class VectorRetargeter:
                 low, high = self.model.jnt_range[joint_index]
                 if low < high:
                     self.data.qpos[joint_index] = (low + high) / 2.0
-                break
 
         self._forward()
 
@@ -337,6 +361,10 @@ class VectorRetargeter:
     def _get_effective_weight(self, index: int) -> float:
         return self._weights[index]
 
+    def _get_loss_type(self, index: int) -> str:
+        override = self._per_vector_loss_types[index]
+        return override if override else self._vector_loss_type
+
     def _compute_loss(self, qpos: np.ndarray) -> float:
         full_qpos = self._expand_qpos(qpos)
         self._forward(full_qpos)
@@ -344,7 +372,7 @@ class VectorRetargeter:
         loss = 0.0
         for index in range(len(robot_vecs)):
             weight = self._get_effective_weight(index)
-            if self._vector_loss_type == "residual":
+            if self._get_loss_type(index) == "residual":
                 diff = robot_vecs[index] - self._target_vectors[index]
                 dist = float(np.linalg.norm(diff))
                 loss += weight * _huber_loss(dist, self._vector_huber_delta)
@@ -376,6 +404,20 @@ class VectorRetargeter:
                 qpos_id = self._angle_qpos_ids[index]
                 diff = full_qpos[qpos_id] - self._target_angles[index]
                 loss += self._angle_weights[index] * diff * diff
+        if self._target_distances is not None:
+            for index in range(len(self._dist_site_ids)):
+                threshold = self._dist_thresholds[index]
+                raw_dist = self._raw_human_distances[index]
+                activation = max(0.0, 1.0 - raw_dist / threshold) if threshold > 0.0 else 1.0
+                if activation <= 0.0:
+                    continue
+                id_a, is_site_a, id_b, is_site_b = self._dist_site_ids[index]
+                pos_a = self._get_pos(id_a, is_site_a)
+                pos_b = self._get_pos(id_b, is_site_b)
+                robot_dist = float(np.linalg.norm(pos_b - pos_a))
+                diff = robot_dist - self._target_distances[index]
+                if diff > 0.0:
+                    loss += self._dist_weights[index] * activation * diff * diff
         return loss
 
     def _compute_loss_and_grad(self, qpos: np.ndarray) -> tuple[float, np.ndarray]:
@@ -403,7 +445,7 @@ class VectorRetargeter:
                 mujoco.mj_jacBody(self.model, self.data, jac_origin, None, self.origin_ids[index])
 
             jac_diff = jac_task - jac_origin
-            if self._vector_loss_type == "residual":
+            if self._get_loss_type(index) == "residual":
                 diff = robot_vec - self._target_vectors[index]
                 dist = float(np.linalg.norm(diff))
                 loss += weight * _huber_loss(dist, self._vector_huber_delta)
@@ -465,6 +507,38 @@ class VectorRetargeter:
                 loss += weight * diff * diff
                 grad[dof_id] += 2.0 * weight * diff
 
+        if self._target_distances is not None:
+            for index in range(len(self._dist_site_ids)):
+                threshold = self._dist_thresholds[index]
+                raw_dist = self._raw_human_distances[index]
+                activation = max(0.0, 1.0 - raw_dist / threshold) if threshold > 0.0 else 1.0
+                if activation <= 0.0:
+                    continue
+                id_a, is_site_a, id_b, is_site_b = self._dist_site_ids[index]
+                pos_a = self._get_pos(id_a, is_site_a)
+                pos_b = self._get_pos(id_b, is_site_b)
+                vec_ab = pos_b - pos_a
+                robot_dist = float(np.linalg.norm(vec_ab))
+                if robot_dist < 1e-8:
+                    continue
+                diff = robot_dist - self._target_distances[index]
+                if diff <= 0.0:
+                    continue
+                weight = self._dist_weights[index] * activation
+                loss += weight * diff * diff
+                jac_a = np.zeros((3, num_velocities))
+                jac_b = np.zeros((3, num_velocities))
+                if is_site_a:
+                    mujoco.mj_jacSite(self.model, self.data, jac_a, None, id_a)
+                else:
+                    mujoco.mj_jacBody(self.model, self.data, jac_a, None, id_a)
+                if is_site_b:
+                    mujoco.mj_jacSite(self.model, self.data, jac_b, None, id_b)
+                else:
+                    mujoco.mj_jacBody(self.model, self.data, jac_b, None, id_b)
+                direction = vec_ab / robot_dist
+                grad += 2.0 * weight * diff * (direction @ (jac_b - jac_a))
+
         return loss, self._reduce_grad(grad)
 
     def update_targets(
@@ -487,7 +561,10 @@ class VectorRetargeter:
         for index, (origin_idx, target_idx) in enumerate(self.human_vector_pairs):
             vector = landmarks[target_idx] - landmarks[origin_idx]
             norm = np.linalg.norm(vector)
-            target_vectors[index] = vector_scale * vector
+            scale = vector_scale
+            if self._per_vector_loss_scales[index] > 0.0:
+                scale = vector_scale * self._per_vector_loss_scales[index]
+            target_vectors[index] = scale * vector
             if norm < 1e-8:
                 directions[index] = 0.0
             else:
@@ -528,6 +605,18 @@ class VectorRetargeter:
                 normalized = np.clip(normalized * self._angle_scales[index], 0.0, 1.0)
                 target_angles[index] = low + normalized * (high - low)
             self._target_angles = target_angles
+
+        if self._dist_human_pairs:
+            target_distances = np.zeros(len(self._dist_human_pairs))
+            raw_human_distances = np.zeros(len(self._dist_human_pairs))
+            for index, (a, b) in enumerate(self._dist_human_pairs):
+                raw_dist = float(np.linalg.norm(landmarks[a] - landmarks[b]))
+                raw_human_distances[index] = raw_dist
+                target_distances[index] = self._dist_scales[index] * raw_dist
+            self._target_distances = target_distances
+            self._raw_human_distances = raw_human_distances
+        else:
+            self._target_distances = None
 
     def solve(self) -> np.ndarray:
         if self._target_directions is None:

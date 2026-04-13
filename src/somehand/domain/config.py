@@ -69,6 +69,8 @@ class VectorConstraint:
     robot: list[str] = field(default_factory=list)
     robot_types: list[str] = field(default_factory=lambda: ["body", "body"])
     weight: float = 1.0
+    loss_type: str = ""
+    loss_scale: float = 0.0
 
 
 @dataclass
@@ -86,11 +88,22 @@ class FrameConstraint:
 
 
 @dataclass
+class DistanceConstraint:
+    human: list[int] = field(default_factory=list)
+    robot: list[str] = field(default_factory=list)
+    robot_types: list[str] = field(default_factory=lambda: ["site", "site"])
+    weight: float = 1.0
+    scale: float = 1.0
+    threshold: float = 0.04
+
+
+@dataclass
 class RetargetingConfig:
     hand: HandConfig = field(default_factory=HandConfig)
     controller: ControllerConfig = field(default_factory=ControllerConfig)
     vector_constraints: list[VectorConstraint] = field(default_factory=list)
     frame_constraints: list[FrameConstraint] = field(default_factory=list)
+    distance_constraints: list[DistanceConstraint] = field(default_factory=list)
     vector_loss: VectorLossConfig = field(default_factory=VectorLossConfig)
     angle_constraints: list[AngleConstraint] = field(default_factory=list)
     preprocess: PreprocessConfig = field(default_factory=PreprocessConfig)
@@ -135,6 +148,8 @@ class RetargetingConfig:
                 raise ValueError("vector constraint robot_types must only contain 'body' or 'site'")
             if constraint.weight < 0.0:
                 raise ValueError("vector constraint weight must be >= 0")
+            if constraint.loss_type and constraint.loss_type not in {"direction", "residual"}:
+                raise ValueError("vector constraint loss_type must be 'direction', 'residual', or empty")
         for constraint in self.frame_constraints:
             if len(constraint.robot_types) != 3:
                 raise ValueError("frame constraint robot_types must have length 3")
@@ -144,6 +159,17 @@ class RetargetingConfig:
                 raise ValueError("frame constraint primary_weight must be >= 0")
             if constraint.secondary_weight < 0.0:
                 raise ValueError("frame constraint secondary_weight must be >= 0")
+        for constraint in self.distance_constraints:
+            if len(constraint.human) != 2:
+                raise ValueError("distance constraint human must have length 2")
+            if len(constraint.robot) != 2:
+                raise ValueError("distance constraint robot must have length 2")
+            if len(constraint.robot_types) != 2:
+                raise ValueError("distance constraint robot_types must have length 2")
+            if any(link_type not in {"body", "site"} for link_type in constraint.robot_types):
+                raise ValueError("distance constraint robot_types must only contain 'body' or 'site'")
+            if constraint.weight < 0.0:
+                raise ValueError("distance constraint weight must be >= 0")
         if not 0.0 < self.preprocess.temporal_filter_alpha <= 1.0:
             raise ValueError("temporal_filter_alpha must be in (0, 1]")
         if not 0.0 < self.solver.output_alpha <= 1.0:

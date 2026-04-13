@@ -136,6 +136,74 @@ def test_thumb_frame_is_local_to_cmc_body():
     assert np.allclose(secondary_after, base_secondary)
 
 
+def test_thumb_frame_responds_to_cmc_joints():
+    """Frame axes must change when CMC roll or pitch change, proving coverage."""
+    config = load_retargeting_config("configs/retargeting/right/linkerhand_l20_right.yaml")
+    hand_model = HandModel(config.hand.mjcf_path)
+    retargeter = VectorRetargeter(hand_model, config)
+
+    base_primary, base_secondary = retargeter._get_robot_frame_axes()
+    name_to_idx = hand_model.get_joint_name_to_qpos_index()
+
+    for joint_name in ("thumb_cmc_roll", "thumb_cmc_pitch"):
+        qpos = hand_model.get_qpos().copy()
+        joint_range = hand_model.model.jnt_range[
+            mujoco.mj_name2id(hand_model.model, mujoco.mjtObj.mjOBJ_JOINT, joint_name)
+        ]
+        qpos[name_to_idx[joint_name]] = joint_range[1]
+        hand_model.set_qpos(qpos)
+        retargeter._forward(hand_model.get_qpos())
+        primary_after, secondary_after = retargeter._get_robot_frame_axes()
+
+        axes_changed = (
+            not np.allclose(primary_after, base_primary, atol=1e-3)
+            or not np.allclose(secondary_after, base_secondary, atol=1e-3)
+        )
+        assert axes_changed, f"Frame axes did not change when {joint_name} was set to max"
+
+        hand_model.reset()
+        retargeter._forward(hand_model.get_qpos())
+
+
+def test_thumb_cmc_joints_engage_during_pinch():
+    """CMC joints must produce meaningful thumb movement during pinch — not just dip maxing out."""
+    config = load_retargeting_config("configs/retargeting/right/linkerhand_l20_right.yaml")
+    hand_model = HandModel(config.hand.mjcf_path)
+    retargeter = VectorRetargeter(hand_model, config)
+
+    retargeter.update_targets(synthetic_hand_pose("pinch"), hand_side="right")
+    qpos = retargeter.solve()
+
+    name_to_idx = hand_model.get_joint_name_to_qpos_index()
+    model = hand_model.model
+
+    def utilization(joint_name):
+        jid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, joint_name)
+        low, high = model.jnt_range[jid]
+        return (qpos[name_to_idx[joint_name]] - low) / (high - low) if high > low else 0.0
+
+    assert utilization("thumb_cmc_yaw") > 0.30, "thumb_cmc_yaw should be significantly engaged during pinch"
+    assert utilization("thumb_dip") < 0.95, "thumb_dip should not max out during pinch"
+
+
+def test_pinch_thumb_tip_reaches_index():
+    """After solving pinch, thumb tip should be close to index tip in robot space."""
+    config = load_retargeting_config("configs/retargeting/right/linkerhand_l20_right.yaml")
+    hand_model = HandModel(config.hand.mjcf_path)
+    retargeter = VectorRetargeter(hand_model, config)
+
+    retargeter.update_targets(synthetic_hand_pose("pinch"), hand_side="right")
+    retargeter.solve()
+
+    thumb_tip_id = mujoco.mj_name2id(model := hand_model.model, mujoco.mjtObj.mjOBJ_SITE, "thumb_distal_tip")
+    index_tip_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_SITE, "index_distal_tip")
+    thumb_pos = hand_model.data.site_xpos[thumb_tip_id]
+    index_pos = hand_model.data.site_xpos[index_tip_id]
+    distance = np.linalg.norm(thumb_pos - index_pos)
+
+    assert distance < 0.080, f"Thumb-index tip distance {distance:.4f}m too large during pinch (max 80mm)"
+
+
 @pytest.mark.skipif(
     not Path("recordings/pico_left.pkl").exists(),
     reason="left-hand recording fixture not available",

@@ -10,13 +10,13 @@ retargeting:
     - 2
     - 3
     joint: thumb_mcp
-    weight: 3.0
+    weight: 0.5
   - landmarks:
     - 2
     - 3
     - 4
     joint: thumb_dip
-    weight: 3.0
+    weight: 0.5
   - landmarks:
     - 5
     - 6
@@ -107,36 +107,6 @@ retargeting:
     - world
     - thumb_distal_tip
     weight: 2.5
-    robot_types:
-    - body
-    - site
-  - human:
-    - 1
-    - 4
-    robot:
-    - thumb_metacarpals_base1
-    - thumb_distal_tip
-    weight: 2.0
-    robot_types:
-    - body
-    - site
-  - human:
-    - 2
-    - 4
-    robot:
-    - thumb_metacarpals
-    - thumb_distal_tip
-    weight: 1.5
-    robot_types:
-    - body
-    - site
-  - human:
-    - 3
-    - 4
-    robot:
-    - thumb_distal
-    - thumb_distal_tip
-    weight: 1.5
     robot_types:
     - body
     - site
@@ -253,8 +223,33 @@ retargeting:
     human_origin: 1
     human_primary: 2
     human_secondary: 5
-    robot_origin: thumb_metacarpals_base1
+    robot_origin: thumb_metacarpals
     robot_primary: thumb_proximal
     robot_secondary: index_proximal
-    primary_weight: 1.5
-    secondary_weight: 1.0
+    primary_weight: 2.0
+    secondary_weight: 1.8
+  distance_constraints:
+  - human:
+    - 4
+    - 8
+    robot:
+    - thumb_distal_tip
+    - index_distal_tip
+    robot_types:
+    - site
+    - site
+    weight: 2000.0
+    scale: 1.0
+    threshold: 0.04
+  - human:
+    - 4
+    - 12
+    robot:
+    - thumb_distal_tip
+    - middle_distal_tip
+    robot_types:
+    - site
+    - site
+    weight: 1500.0
+    scale: 1.0
+    threshold: 0.04

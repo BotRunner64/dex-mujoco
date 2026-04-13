@@ -76,7 +76,10 @@ def synthetic_hand_pose(pose: str = "open") -> np.ndarray:
     )
 
     if pose == "pinch":
-        thumb[-1] = [0.048, -0.060, 0.000]
+        thumb[0] = [0.020, -0.016, 0.000]
+        thumb[1] = [0.034, -0.032, 0.000]
+        thumb[2] = [0.042, -0.048, 0.000]
+        thumb[3] = [0.038, -0.062, 0.000]
         index[-1] = [0.032, -0.082, 0.000]
         index[-2] = [0.027, -0.072, 0.000]
     elif pose == "fist":
