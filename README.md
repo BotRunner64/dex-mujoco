@@ -17,26 +17,27 @@
 
 下表按当前仓库中的 retargeting 配置整理，新增机型时建议同步更新。
 
-| 公司 | 型号 |
-| --- | --- |
-| DexRobot | DexHand021 |
-| LinkerHand | L6 |
-| LinkerHand | L10 |
-| LinkerHand | L20 |
-| LinkerHand | L20 Pro |
-| LinkerHand | L21 |
-| LinkerHand | L25 |
-| LinkerHand | L30 |
-| LinkerHand | LHG20 |
-| LinkerHand | O6 |
-| LinkerHand | O7 |
-| LinkerHand | T12 |
-| BrainCo | Revo2 |
-| Wuji | Wuji Hand |
+| 公司 | 型号 | 自由度 | 关节数量 |
+| --- | --- | ---: | ---: |
+| DexRobot | DexHand021 | 20 | 20 |
+| LinkerHand | L6 | 6 | 11 |
+| LinkerHand | L10 | 10 | 20 |
+| LinkerHand | L20 | 16 | 21 |
+| LinkerHand | L20 Pro | 17 | 21 |
+| LinkerHand | L21 | 17 | 17 |
+| LinkerHand | L25 | 21 | 21 |
+| LinkerHand | L30 | 20 | 20 |
+| LinkerHand | LHG20 | 16 | 21 |
+| LinkerHand | O6 | 6 | 11 |
+| LinkerHand | O7 | 7 | 17 |
+| LinkerHand | T12 | 14 | 19 |
+| BrainCo | Revo2 | 6 | 11 |
+| Wuji | Wuji Hand | 20 | 20 |
 
 说明：
 
 - 这张表描述的是 **retargeting 配置支持**，不等同于所有机型都具备真机 `real` backend 支持。
+- 自由度按 `URDF` 中“非固定、非 `mimic`”关节统计；关节数量按 `URDF` 中非固定关节统计。
 - 云端默认分发的是运行所需的 `MJCF` 资产，不是 `URDF` 源文件。
 - 本仓库不提交 `assets/` 实际内容；本地仅保留占位目录，所有资产统一放在云端资产仓。
 
@@ -61,10 +62,9 @@ pip install -e .
 
 ```bash
 # ModelScope（推荐）
-python scripts/setup/download_assets.py --repo-id BingqianWu/somehand-assets
+python scripts/setup/download_assets.py
 
-# 或者先配置环境变量，再按组下载
-export SOMEHAND_MODELSCOPE_REPO_ID=BingqianWu/somehand-assets
+# 或者按组下载
 python scripts/setup/download_assets.py --only mjcf mediapipe examples
 
 # HuggingFace 也支持
@@ -114,7 +114,7 @@ pip install -e .
 如果你已经有外部 asset 仓库，先把默认运行资源拉下来：
 
 ```bash
-python scripts/setup/download_assets.py --only mjcf mediapipe --repo-id BingqianWu/somehand-assets
+python scripts/setup/download_assets.py --only mjcf mediapipe
 ```
 
 `hc-mocap` 默认使用代码内置的 joint 顺序和骨架定义，不再依赖仓库里的默认 `BVH` 文件；只有你想覆盖默认 UDP 解析格式时，才需要额外传 `--reference-bvh <path>`.
@@ -122,7 +122,7 @@ python scripts/setup/download_assets.py --only mjcf mediapipe --repo-id Bingqian
 如果你想下载仓库里不再直接存放的参考 `BVH` 和样例录制数据：
 
 ```bash
-python scripts/setup/download_assets.py --only examples --repo-id BingqianWu/somehand-assets
+python scripts/setup/download_assets.py --only examples
 ```
 
 如果你不想维护远端资产，也可以继续手动转换/准备本地文件。

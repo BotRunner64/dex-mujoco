@@ -3,17 +3,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-import os
 from pathlib import Path
 from typing import Iterable
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
-MODELSCOPE_REPO_ID_ENV = "SOMEHAND_MODELSCOPE_REPO_ID"
-HUGGINGFACE_REPO_ID_ENV = "SOMEHAND_HF_REPO_ID"
-
-DEFAULT_MODELSCOPE_REPO_ID = os.getenv(MODELSCOPE_REPO_ID_ENV, "")
-DEFAULT_HUGGINGFACE_REPO_ID = os.getenv(HUGGINGFACE_REPO_ID_ENV, "")
+DEFAULT_MODELSCOPE_REPO_ID = "BingqianWu/somehand-assets"
+DEFAULT_HUGGINGFACE_REPO_ID = "12e21/somehand-assets"
 
 
 @dataclass(frozen=True)
@@ -101,8 +97,4 @@ def build_missing_asset_message(
 ) -> str:
     asset_group = group or infer_asset_group(path)
     command = build_download_command(group=asset_group)
-    return (
-        f"{label} not found: {path}. "
-        f"Download it with `{command}` after setting "
-        f"`{MODELSCOPE_REPO_ID_ENV}` or passing `--repo-id`."
-    )
+    return f"{label} not found: {path}. Download it with `{command}`."

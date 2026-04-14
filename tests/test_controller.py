@@ -4,6 +4,7 @@ import time
 from pathlib import Path
 from types import SimpleNamespace
 
+import mujoco
 import numpy as np
 import pytest
 
@@ -172,6 +173,51 @@ def test_mujoco_sim_controller_adds_minimum_damping_for_undamped_models():
     controller.close()
 
 
+def test_mujoco_sim_controller_adds_minimum_damping_for_mimic_dofs():
+    controller = MujocoSimController("assets/mjcf/linkerhand_o6_right/model.xml", control_rate_hz=50, sim_rate_hz=200)
+
+    damping = controller._hand_model.model.dof_damping[controller._mimic_dof_indices]
+
+    assert damping.shape[0] == len(controller._hand_model.mimic_joints)
+    assert np.all(damping >= 0.25)
+
+    controller.close()
+
+
+@pytest.mark.parametrize(
+    ("model_path", "expected"),
+    [
+        (
+            "assets/mjcf/linkerhand_o6_right/model.xml",
+            {"mimic_damping": 0.35, "mimic_armature": 0.01, "mimic_frictionloss": 0.01, "actuator_kp_cap": 4.0},
+        ),
+        (
+            "assets/mjcf/revo2_right/model.xml",
+            {"mimic_damping": 0.30, "mimic_armature": 0.005, "mimic_frictionloss": 0.005, "actuator_kp_cap": 4.5},
+        ),
+        (
+            "assets/mjcf/linkerhand_l20_right/model.xml",
+            {"mimic_damping": 0.25, "mimic_armature": 0.0, "mimic_frictionloss": 0.0, "actuator_kp_cap": 5.0},
+        ),
+    ],
+)
+def test_mujoco_sim_controller_applies_family_specific_passive_tuning(model_path, expected):
+    controller = MujocoSimController(model_path, control_rate_hz=50, sim_rate_hz=200)
+
+    for key, value in expected.items():
+        assert controller._passive_tuning[key] == pytest.approx(value)
+
+    mimic_damping = controller._hand_model.model.dof_damping[controller._mimic_dof_indices]
+    mimic_armature = controller._hand_model.model.dof_armature[controller._mimic_dof_indices]
+    mimic_frictionloss = controller._hand_model.model.dof_frictionloss[controller._mimic_dof_indices]
+
+    assert np.all(mimic_damping >= expected["mimic_damping"])
+    assert np.all(mimic_armature >= expected["mimic_armature"])
+    assert np.all(mimic_frictionloss >= expected["mimic_frictionloss"])
+
+    controller.close()
+
+
 def test_mujoco_sim_controller_softens_position_actuator_kp():
     controller = MujocoSimController("assets/mjcf/linkerhand_l20_right/model.xml", control_rate_hz=50, sim_rate_hz=200)
 
@@ -180,6 +226,64 @@ def test_mujoco_sim_controller_softens_position_actuator_kp():
 
     assert np.all(kp <= 5.0)
     assert np.allclose(bias, -kp)
+
+    controller.close()
+
+
+def test_mujoco_sim_controller_stiffens_mimic_equalities():
+    controller = MujocoSimController("assets/mjcf/linkerhand_o6_right/model.xml", control_rate_hz=50, sim_rate_hz=200)
+
+    model = controller._hand_model.model
+    joint_eq_type = int(mujoco.mjtEq.mjEQ_JOINT)
+    equality_indices = [index for index in range(model.neq) if int(model.eq_type[index]) == joint_eq_type]
+
+    assert equality_indices
+    expected_solref = np.tile([0.005, 1.5], (len(equality_indices), 1))
+    expected_solimp = np.tile([0.95, 0.99, 0.0005, 0.5, 2.0], (len(equality_indices), 1))
+    np.testing.assert_allclose(model.eq_solref[equality_indices], expected_solref)
+    np.testing.assert_allclose(model.eq_solimp[equality_indices], expected_solimp)
+
+    controller.close()
+
+
+def test_mujoco_sim_controller_keeps_mimic_joint_velocities_bounded():
+    controller = MujocoSimController("assets/mjcf/linkerhand_o6_right/model.xml", control_rate_hz=100, sim_rate_hz=500)
+
+    target = controller._hand_model.get_qpos()
+    target[:] = 0.0
+    target[1] = 0.35
+    target[3] = 0.9
+    target[5] = 0.95
+    target[7] = 0.85
+    target[9] = 0.8
+
+    controller.start()
+    controller.set_command(
+        HandCommand(
+            target_qpos_rad=target,
+            hand_model="linkerhand_o6_right",
+            hand_side="right",
+            timestamp=time.monotonic(),
+            sequence_id=1,
+        )
+    )
+
+    velocity_samples = []
+    timestamp_samples = []
+    start = time.monotonic()
+    deadline = start + 0.30
+    while time.monotonic() < deadline:
+        state = controller.get_state()
+        timestamp_samples.append(time.monotonic() - start)
+        velocity_samples.append(np.abs(state.measured_qvel[controller._mimic_dof_indices]))
+        time.sleep(0.005)
+
+    velocity_samples = np.asarray(velocity_samples)
+    timestamp_samples = np.asarray(timestamp_samples)
+    steady_state_samples = velocity_samples[timestamp_samples >= 0.15]
+    assert velocity_samples.size > 0
+    assert steady_state_samples.size > 0
+    assert np.percentile(steady_state_samples, 95) < 1.0
 
     controller.close()
 

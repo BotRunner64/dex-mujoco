@@ -2,7 +2,7 @@
 """Download somehand assets from ModelScope or HuggingFace.
 
 Usage:
-    python scripts/setup/download_assets.py --repo-id <repo>
+    python scripts/setup/download_assets.py
     python scripts/setup/download_assets.py --only mjcf mediapipe
     python scripts/setup/download_assets.py --source huggingface --repo-id <repo>
 """
@@ -25,8 +25,6 @@ from somehand.external_assets import (
     ASSET_GROUPS,
     DEFAULT_HUGGINGFACE_REPO_ID,
     DEFAULT_MODELSCOPE_REPO_ID,
-    HUGGINGFACE_REPO_ID_ENV,
-    MODELSCOPE_REPO_ID_ENV,
     AssetEntry,
     iter_asset_entries,
 )
@@ -51,8 +49,19 @@ def _safe_extract_tar(archive_path: Path, dst: Path) -> None:
                 raise ValueError(f"Unsafe archive member path: {member.name}")
         tar.extractall(tmp_dst)
 
+    extracted_children = list(tmp_dst.iterdir())
+    extracted_root = tmp_dst
+    if (
+        len(extracted_children) == 1
+        and extracted_children[0].is_dir()
+        and not extracted_children[0].is_symlink()
+    ):
+        extracted_root = extracted_children[0]
+
     _remove_path(dst)
-    tmp_dst.replace(dst)
+    extracted_root.replace(dst)
+    if extracted_root != tmp_dst:
+        _remove_path(tmp_dst)
 
 
 def _resolve_entry_source(repo_cache: Path, entry: AssetEntry) -> Path:
@@ -157,7 +166,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--repo-id",
         default=None,
-        help="Remote asset repo id override",
+        help="Remote asset repo id override (default: built-in somehand asset repo)",
     )
     parser.add_argument(
         "--cache-dir",
@@ -175,19 +184,11 @@ def main() -> None:
 
     if args.source == "huggingface":
         repo_id = args.repo_id or DEFAULT_HUGGINGFACE_REPO_ID
-        if not repo_id:
-            raise SystemExit(
-                f"Missing HuggingFace repo id. Pass `--repo-id` or set `{HUGGINGFACE_REPO_ID_ENV}`."
-            )
         cache_dir = Path(args.cache_dir) if args.cache_dir else PROJECT_ROOT / "data" / "huggingface_cache"
         _download_huggingface(repo_id, entries, cache_dir)
         return
 
     repo_id = args.repo_id or DEFAULT_MODELSCOPE_REPO_ID
-    if not repo_id:
-        raise SystemExit(
-            f"Missing ModelScope repo id. Pass `--repo-id` or set `{MODELSCOPE_REPO_ID_ENV}`."
-        )
     cache_dir = Path(args.cache_dir) if args.cache_dir else PROJECT_ROOT / "data" / "modelscope_cache"
     _download_modelscope(repo_id, entries, cache_dir)
 

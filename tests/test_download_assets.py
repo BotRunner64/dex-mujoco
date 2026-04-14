@@ -37,6 +37,29 @@ def test_safe_extract_tar_round_trip(tmp_path: Path) -> None:
     assert (dst / "nested" / "b.txt").read_text(encoding="utf-8") == "world\n"
 
 
+def test_safe_extract_tar_strips_single_top_level_directory(tmp_path: Path) -> None:
+    src = tmp_path / "src"
+    wrapped = src / "mjcf"
+    wrapped.mkdir(parents=True)
+    (wrapped / "model.xml").write_text("<mujoco/>\n", encoding="utf-8")
+    (wrapped / "meshes").mkdir()
+    (wrapped / "meshes" / "part.stl").write_text("mesh\n", encoding="utf-8")
+
+    archive = tmp_path / "bundle.tar.gz"
+
+    import tarfile
+
+    with tarfile.open(archive, "w:gz") as tar:
+        tar.add(wrapped, arcname="mjcf")
+
+    dst = tmp_path / "assets" / "mjcf"
+    _safe_extract_tar(archive, dst)
+
+    assert (dst / "model.xml").read_text(encoding="utf-8") == "<mujoco/>\n"
+    assert (dst / "meshes" / "part.stl").read_text(encoding="utf-8") == "mesh\n"
+    assert not (dst / "mjcf").exists()
+
+
 def test_resolve_entry_source_uses_remote_layout(tmp_path: Path) -> None:
     archive = tmp_path / "archives" / "mjcf_assets.tar.gz"
     archive.parent.mkdir(parents=True)
@@ -70,4 +93,4 @@ def test_missing_asset_message_points_to_group_download() -> None:
 
     assert "MJCF file not found" in message
     assert "--only mjcf" in message
-    assert "SOMEHAND_MODELSCOPE_REPO_ID" in message
+    assert "Download it with `python scripts/setup/download_assets.py --only mjcf`." in message
