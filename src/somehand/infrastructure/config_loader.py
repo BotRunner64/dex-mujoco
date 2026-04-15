@@ -21,6 +21,7 @@ from somehand.domain.config import (
     VectorLossConfig,
 )
 from somehand.domain.hand_side import normalize_hand_side
+from somehand.infrastructure.universal_config import apply_universal_preset
 
 
 def _deep_merge(base: object, override: object) -> object:
@@ -90,6 +91,7 @@ def load_retargeting_config(config_path: str) -> RetargetingConfig:
     )
 
     retargeting_data = data.get("retargeting", {})
+    config.preset = str(retargeting_data.get("preset", ""))
     legacy_vector_keys = {
         "human_vector_pairs",
         "origin_link_names",
@@ -112,6 +114,7 @@ def load_retargeting_config(config_path: str) -> RetargetingConfig:
             weight=float(item.get("weight", 1.0)),
             loss_type=str(item.get("loss_type", "")),
             loss_scale=float(item.get("loss_scale", 0.0)),
+            optional=bool(item.get("optional", False)),
         )
         for item in retargeting_data.get("vector_constraints", [])
     ]
@@ -124,6 +127,8 @@ def load_retargeting_config(config_path: str) -> RetargetingConfig:
             scale=float(item.get("scale", 1.0)),
             threshold=float(item.get("threshold", 0.04)),
             activation_type=str(item.get("activation_type", "gaussian")),
+            scale_mode=str(item.get("scale_mode", "raw")),
+            optional=bool(item.get("optional", False)),
         )
         for item in retargeting_data.get("distance_constraints", [])
     ]
@@ -139,6 +144,7 @@ def load_retargeting_config(config_path: str) -> RetargetingConfig:
             robot_types=[str(value) for value in item.get("robot_types", ["body", "body", "body"])],
             primary_weight=float(item.get("primary_weight", 1.0)),
             secondary_weight=float(item.get("secondary_weight", 1.0)),
+            optional=bool(item.get("optional", False)),
         )
         for item in retargeting_data.get("frame_constraints", [])
     ]
@@ -159,9 +165,17 @@ def load_retargeting_config(config_path: str) -> RetargetingConfig:
             weight=item.get("weight", 1.0),
             scale=item.get("scale", 1.0),
             invert=item.get("invert", False),
+            optional=bool(item.get("optional", False)),
         )
         for item in retargeting_data.get("angle_constraints", [])
     ]
+    if config.preset == "universal_v1":
+        if any(
+            retargeting_data.get(key)
+            for key in ("vector_constraints", "distance_constraints", "frame_constraints", "angle_constraints")
+        ):
+            raise ValueError("retargeting.preset cannot be combined with explicit constraints")
+        apply_universal_preset(config)
     if "position_constraints" in retargeting_data:
         raise ValueError("retargeting.position_constraints is no longer supported")
     if "pinch" in retargeting_data:

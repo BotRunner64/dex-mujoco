@@ -62,6 +62,7 @@ class AngleConstraint:
     weight: float = 1.0
     scale: float = 1.0
     invert: bool = False
+    optional: bool = False
 
 
 @dataclass
@@ -72,6 +73,7 @@ class VectorConstraint:
     weight: float = 1.0
     loss_type: str = ""
     loss_scale: float = 0.0
+    optional: bool = False
 
 
 @dataclass
@@ -86,6 +88,7 @@ class FrameConstraint:
     robot_types: list[str] = field(default_factory=lambda: ["body", "body", "body"])
     primary_weight: float = 1.0
     secondary_weight: float = 1.0
+    optional: bool = False
 
 
 @dataclass
@@ -97,12 +100,15 @@ class DistanceConstraint:
     scale: float = 1.0
     threshold: float = 0.04
     activation_type: str = "gaussian"
+    scale_mode: str = "raw"
+    optional: bool = False
 
 
 @dataclass
 class RetargetingConfig:
     hand: HandConfig = field(default_factory=HandConfig)
     controller: ControllerConfig = field(default_factory=ControllerConfig)
+    preset: str = ""
     vector_constraints: list[VectorConstraint] = field(default_factory=list)
     frame_constraints: list[FrameConstraint] = field(default_factory=list)
     distance_constraints: list[DistanceConstraint] = field(default_factory=list)
@@ -136,6 +142,8 @@ class RetargetingConfig:
         return [constraint.weight for constraint in self.vector_constraints]
 
     def validate(self) -> None:
+        if self.preset and self.preset not in {"universal_v1"}:
+            raise ValueError(f"retargeting.preset must be 'universal_v1' when set, got '{self.preset}'")
         if not self.hand.side:
             raise ValueError("hand.side must be explicitly set to 'left' or 'right'")
         self.hand.side = normalize_hand_side(self.hand.side)
@@ -177,6 +185,8 @@ class RetargetingConfig:
                     f"distance constraint activation_type must be 'gaussian' or 'linear', "
                     f"got '{constraint.activation_type}'"
                 )
+            if constraint.scale_mode not in {"raw", "hand_scaled"}:
+                raise ValueError("distance constraint scale_mode must be 'raw' or 'hand_scaled'")
         if not 0.0 < self.preprocess.temporal_filter_alpha <= 1.0:
             raise ValueError("temporal_filter_alpha must be in (0, 1]")
         if not 0.0 < self.solver.output_alpha <= 1.0:

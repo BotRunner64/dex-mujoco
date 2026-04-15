@@ -3,6 +3,7 @@
 from dataclasses import dataclass
 from time import perf_counter
 
+import mujoco
 import numpy as np
 
 from .constants import (
@@ -29,6 +30,7 @@ from .constants import (
     WRIST,
 )
 from .domain.preprocessing import compute_target_directions
+from .infrastructure.model_name_resolver import ModelNameResolver
 _LEFT_RIGHT_ROBOT_MIRROR = np.diag([1.0, -1.0, 1.0]).astype(np.float64)
 
 
@@ -197,6 +199,56 @@ def current_alignment_metrics(retargeter) -> dict[str, float]:
                 secondary_cosines[index] = float(np.dot(vector / norm, frame_secondary_targets[index]))
         metrics["thumb_frame_primary_cosine"] = float(np.mean(primary_cosines))
         metrics["thumb_frame_secondary_cosine"] = float(np.mean(secondary_cosines))
+    metrics.update(closure_metrics(retargeter))
+    return metrics
+
+
+def _resolve_generic_point(retargeter, semantic_name: str, *, obj_type) -> tuple[int, bool] | None:
+    resolver = ModelNameResolver(retargeter.hand_model.model, hand_side=retargeter.config.hand.side)
+    resolved = resolver.resolve_optional(semantic_name, obj_type=obj_type, role="Acceptance metric")
+    if resolved is None:
+        return None
+    point_id = mujoco.mj_name2id(retargeter.hand_model.model, obj_type, resolved)
+    if point_id < 0:
+        return None
+    return point_id, obj_type == mujoco.mjtObj.mjOBJ_SITE
+
+
+def _point_position(retargeter, point: tuple[int, bool]) -> np.ndarray:
+    index, is_site = point
+    if is_site:
+        return retargeter.hand_model.data.site_xpos[index]
+    return retargeter.hand_model.data.xpos[index]
+
+
+def closure_metrics(retargeter) -> dict[str, float]:
+    model = retargeter.hand_model.model
+    thumb_tip = _resolve_generic_point(retargeter, "thumb_tip", obj_type=mujoco.mjtObj.mjOBJ_SITE)
+    metrics: dict[str, float] = {}
+    scale = max(retargeter.get_robot_scale(), 1e-8)
+
+    index_tip = _resolve_generic_point(retargeter, "index_tip", obj_type=mujoco.mjtObj.mjOBJ_SITE)
+    if thumb_tip is not None and index_tip is not None:
+        metrics["pinch_thumb_index_gap"] = float(
+            np.linalg.norm(_point_position(retargeter, thumb_tip) - _point_position(retargeter, index_tip))
+        )
+        metrics["pinch_thumb_index_gap_scaled"] = metrics["pinch_thumb_index_gap"] / scale
+
+    closure_distances: list[float] = []
+    for finger in ("index", "middle", "ring", "pinky"):
+        tip = _resolve_generic_point(retargeter, f"{finger}_tip", obj_type=mujoco.mjtObj.mjOBJ_SITE)
+        base = _resolve_generic_point(retargeter, f"{finger}_base", obj_type=mujoco.mjtObj.mjOBJ_BODY)
+        if tip is None or base is None:
+            continue
+        distance = float(np.linalg.norm(_point_position(retargeter, tip) - _point_position(retargeter, base)))
+        closure_distances.append(distance)
+        metrics[f"{finger}_tip_to_base"] = distance
+        metrics[f"{finger}_tip_to_base_scaled"] = distance / scale
+    if closure_distances:
+        metrics["fist_mean_tip_to_base"] = float(np.mean(closure_distances))
+        metrics["fist_max_tip_to_base"] = float(np.max(closure_distances))
+        metrics["fist_mean_tip_to_base_scaled"] = metrics["fist_mean_tip_to_base"] / scale
+        metrics["fist_max_tip_to_base_scaled"] = metrics["fist_max_tip_to_base"] / scale
     return metrics
 
 
@@ -211,10 +263,16 @@ def solver_quality_score(retargeter) -> dict[str, float]:
     losses = []
     frame_primary_scores = []
     frame_secondary_scores = []
+    pose_metrics: dict[str, dict[str, float]] = {}
     for pose_name in ("open", "pinch", "fist"):
+        retargeter.hand_model.reset()
+        retargeter.landmark_filter.reset()
+        retargeter._last_qpos = None
+        retargeter._prev_activations = None
         retargeter.update_targets(synthetic_hand_pose(pose_name), hand_side="right")
         retargeter.solve()
         metrics = current_alignment_metrics(retargeter)
+        pose_metrics[pose_name] = metrics
         weighted_scores.append(metrics["weighted_cosine"])
         mean_scores.append(metrics["mean_cosine"])
         min_scores.append(metrics["min_cosine"])
@@ -235,6 +293,15 @@ def solver_quality_score(retargeter) -> dict[str, float]:
         result["mean_thumb_frame_primary_cosine"] = float(np.mean(frame_primary_scores))
     if frame_secondary_scores:
         result["mean_thumb_frame_secondary_cosine"] = float(np.mean(frame_secondary_scores))
+    if "pinch_thumb_index_gap_scaled" in pose_metrics.get("pinch", {}):
+        result["pinch_thumb_index_gap_scaled"] = float(pose_metrics["pinch"]["pinch_thumb_index_gap_scaled"])
+    if "fist_mean_tip_to_base_scaled" in pose_metrics.get("fist", {}):
+        result["fist_mean_tip_to_base_scaled"] = float(pose_metrics["fist"]["fist_mean_tip_to_base_scaled"])
+    if "fist_mean_tip_to_base_scaled" in pose_metrics.get("open", {}) and "fist_mean_tip_to_base_scaled" in pose_metrics.get("fist", {}):
+        result["fist_closure_ratio"] = float(
+            pose_metrics["fist"]["fist_mean_tip_to_base_scaled"]
+            / max(pose_metrics["open"]["fist_mean_tip_to_base_scaled"], 1e-8)
+        )
     return result
 
 

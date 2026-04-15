@@ -195,6 +195,7 @@ def test_top_level_loader_exports_work():
     bihand = load_bihand_config("configs/retargeting/bihand/linkerhand_l20_bihand.yaml")
 
     assert config.hand.name == "linkerhand_l20_right"
+    assert config.preset == "universal_v1"
     assert bihand.left_config_path.endswith("configs/retargeting/left/linkerhand_l20_left.yaml")
 
 
@@ -238,16 +239,19 @@ def test_side_specific_configs_instantiate_vector_retargeter():
 
 def test_all_distance_constraint_configs_cover_thumb_to_all_fingertips():
     expected_pairs = {(4, 8), (4, 12), (4, 16), (4, 20)}
+    expected_closure_pairs = {(8, 5), (12, 9), (16, 13), (20, 17)}
     config_paths = sorted(Path("configs/retargeting").glob("*/*.yaml"))
     assert config_paths
     for config_path in config_paths:
-        if config_path.parent.name == "bihand":
+        if config_path.parent.name == "bihand" or config_path.name.startswith("_"):
             continue
         config = load_retargeting_config(str(config_path))
         if not config.distance_constraints:
             continue
         actual_pairs = {tuple(constraint.human) for constraint in config.distance_constraints}
-        assert actual_pairs == expected_pairs, f"{config_path} distance pairs mismatch: {actual_pairs}"
+        assert expected_pairs.issubset(actual_pairs), f"{config_path} pinch distance pairs mismatch: {actual_pairs}"
+        if config.preset == "universal_v1":
+            assert expected_closure_pairs.issubset(actual_pairs), f"{config_path} closure pairs mismatch: {actual_pairs}"
 
 
 def test_model_name_resolver_supports_single_letter_prefixes():
