@@ -10,7 +10,8 @@ import cv2
 import mujoco
 import numpy as np
 
-from somehand.visualization import BiHandScene, configure_default_hand_camera, configure_free_camera, _try_frame_hand_camera
+from somehand.runtime.viewer_camera import configure_default_hand_camera, configure_free_camera, try_frame_hand_camera
+from somehand.runtime.viewer_hand import BiHandScene
 
 
 def reload_renderer_cls_for_backend(backend: str | None):
@@ -155,7 +156,7 @@ class BiHandRenderHelper:
 
     def render(self, result) -> np.ndarray:
         self._scene.update(result.left.qpos, result.right.qpos)
-        if not self._camera_initialized and _try_frame_hand_camera(
+        if not self._camera_initialized and try_frame_hand_camera(
             self._camera,
             model=self._model,
             data=self._data,

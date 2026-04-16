@@ -9,15 +9,9 @@ import mujoco
 import numpy as np
 
 from somehand.core import BiHandFrame, BiHandFrameSink, BiHandOutputSink, HandFrame, HandFrameSink, OutputSink, RetargetingStepResult, preprocess_landmarks
-from somehand.visualization import (
-    AsyncBiHandLandmarkVisualizer,
-    AsyncLandmarkVisualizer,
-    AsyncRobotHandVisualizer,
-    BiHandVisualizer,
-    HandVisualizer,
-    configure_default_hand_camera,
-    _try_frame_hand_camera,
-)
+from somehand.runtime.viewer_async import AsyncBiHandLandmarkVisualizer, AsyncLandmarkVisualizer, AsyncRobotHandVisualizer
+from somehand.runtime.viewer_camera import configure_default_hand_camera, try_frame_hand_camera
+from somehand.runtime.viewer_hand import BiHandVisualizer, HandVisualizer
 
 from .sink_rendering import BiHandRenderHelper, create_offscreen_renderer, fit_video_size, transform_points
 
@@ -139,7 +133,7 @@ class RobotHandVideoOutputSink(OutputSink):
             return
         self._data.qpos[:] = result.qpos
         mujoco.mj_forward(self._model, self._data)
-        if not self._camera_initialized and _try_frame_hand_camera(
+        if not self._camera_initialized and try_frame_hand_camera(
             self._camera,
             model=self._model,
             data=self._data,

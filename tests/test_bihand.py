@@ -493,7 +493,7 @@ def test_bihand_render_helper_uses_front_palm_camera(monkeypatch):
         calls.append((azimuth, elevation))
         return True
 
-    monkeypatch.setattr(runtime_sink_rendering, "_try_frame_hand_camera", _fake_try_frame_hand_camera)
+    monkeypatch.setattr(runtime_sink_rendering, "try_frame_hand_camera", _fake_try_frame_hand_camera)
 
     helper = runtime_sink_rendering.BiHandRenderHelper(
         left_hand_model=object(),

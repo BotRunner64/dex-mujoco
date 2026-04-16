@@ -8,6 +8,8 @@ import pytest
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from somehand import visualization
+import somehand.runtime.viewer_hand as viewer_hand
+import somehand.runtime.viewer_passive as viewer_passive
 
 
 class _FakeHandle:
@@ -60,9 +62,9 @@ def test_managed_passive_viewer_passes_window_title_via_loader(monkeypatch):
         captured["kwargs"] = kwargs
         kwargs["handle_return"].put_nowait(handle)
 
-    monkeypatch.setattr(visualization, "_launch_passive_internal_with_window_title", _fake_launch_with_title)
+    monkeypatch.setattr(viewer_passive, "launch_passive_internal_with_window_title", _fake_launch_with_title)
 
-    viewer = visualization._ManagedPassiveViewer(model, data, window_title="Retargeting")
+    viewer = viewer_passive.ManagedPassiveViewer(model, data, window_title="Retargeting")
     viewer.close(timeout=1.0)
 
     assert captured["args"] == (model, data)
@@ -116,14 +118,14 @@ def test_hand_visualizer_recompiles_model_when_window_title_is_set(monkeypatch):
     fake_model = object()
     fake_data = object()
 
-    monkeypatch.setattr(visualization, "_compile_model_with_name", lambda path, name: (fake_model, fake_data))
-    monkeypatch.setattr(visualization, "_ManagedPassiveViewer", _FakeViewer)
-    monkeypatch.setattr(visualization, "_set_viewer_window_title", lambda viewer, title: None)
-    monkeypatch.setattr(visualization, "_set_viewer_overlay_label", lambda viewer, label: None)
-    monkeypatch.setattr(visualization, "configure_free_camera", lambda *args, **kwargs: None)
+    monkeypatch.setattr(viewer_hand, "compile_model_with_name", lambda path, name: (fake_model, fake_data))
+    monkeypatch.setattr(viewer_hand, "ManagedPassiveViewer", _FakeViewer)
+    monkeypatch.setattr(viewer_hand, "set_viewer_window_title", lambda viewer, title: None)
+    monkeypatch.setattr(viewer_hand, "set_viewer_overlay_label", lambda viewer, label: None)
+    monkeypatch.setattr(viewer_hand, "configure_free_camera", lambda *args, **kwargs: None)
 
     hand_model = type("HandModelStub", (), {"mjcf_path": "model.xml", "model": object(), "data": object()})()
-    visualizer = visualization.HandVisualizer(hand_model, window_title="Sim State")
+    visualizer = viewer_hand.HandVisualizer(hand_model, window_title="Sim State")
 
     assert visualizer.model is fake_model
     assert visualizer.data is fake_data

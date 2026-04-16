@@ -329,7 +329,7 @@ def test_robot_hand_video_sink_auto_frames_only_once(monkeypatch, tmp_path):
         "create_offscreen_renderer",
         lambda model, *, width, height: _FakeRenderer(model, width=width, height=height),
     )
-    monkeypatch.setattr(runtime_sinks_output, "_try_frame_hand_camera", _fake_try_frame_hand_camera, raising=False)
+    monkeypatch.setattr(runtime_sinks_output, "try_frame_hand_camera", _fake_try_frame_hand_camera)
 
     model = SimpleNamespace(
         vis=SimpleNamespace(global_=SimpleNamespace(offwidth=640, offheight=480)),
