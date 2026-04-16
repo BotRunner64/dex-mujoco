@@ -69,24 +69,28 @@ pip install -e .
 **2. Download assets**
 
 ```bash
-python scripts/setup/download_assets.py --only mjcf mediapipe
+python scripts/setup/download_assets.py
 ```
 
 **3. Run**
 
 ```bash
-somehand webcam
+somehand replay --recording recordings/webcam_hand.pkl
 ```
 
-You should see a MuJoCo viewer tracking your hand in real time.
+You should see a MuJoCo viewer replaying the sample recording.
 
 ---
 
 ## More Examples
 
-> Replay and render require a recording — create one with `--record-output`, or download samples with `python scripts/setup/download_assets.py --only examples`.
+**Live webcam retargeting**
 
-**Replay a saved recording in MuJoCo sim**
+```bash
+somehand webcam
+```
+
+**Replay in MuJoCo sim**
 
 ```bash
 somehand replay \
