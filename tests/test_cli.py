@@ -11,6 +11,8 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 import somehand.cli.commands as cli_module
 import somehand.cli.runtime as cli_runtime
 import somehand.infrastructure.sinks as sinks_module
+import somehand.runtime.sink_outputs as runtime_sinks_output
+import somehand.runtime.sink_rendering as runtime_sink_rendering
 from somehand.cli import build_parser
 from somehand.infrastructure.sinks import _fit_video_size
 from somehand.paths import DEFAULT_BIHAND_CONFIG_PATH, DEFAULT_CONFIG_PATH, DEFAULT_HC_MOCAP_REFERENCE_BVH
@@ -305,29 +307,29 @@ def test_robot_hand_video_sink_auto_frames_only_once(monkeypatch, tmp_path):
         def close(self):
             return None
 
-    monkeypatch.setattr(sinks_module.cv2, "VideoWriter", _FakeWriter)
-    monkeypatch.setattr(sinks_module.cv2, "VideoWriter_fourcc", lambda *args: 0)
-    monkeypatch.setattr(sinks_module.cv2, "cvtColor", lambda frame, code: frame)
+    monkeypatch.setattr(runtime_sinks_output.cv2, "VideoWriter", _FakeWriter)
+    monkeypatch.setattr(runtime_sinks_output.cv2, "VideoWriter_fourcc", lambda *args: 0)
+    monkeypatch.setattr(runtime_sinks_output.cv2, "cvtColor", lambda frame, code: frame)
     monkeypatch.setattr(
-        sinks_module.mujoco,
+        runtime_sinks_output.mujoco,
         "MjData",
         lambda model: SimpleNamespace(qpos=np.zeros(3), geom_xpos=np.zeros((0, 3))),
     )
-    monkeypatch.setattr(sinks_module.mujoco, "MjvCamera", lambda: SimpleNamespace())
-    monkeypatch.setattr(sinks_module.mujoco, "mjv_defaultCamera", lambda camera: None)
-    monkeypatch.setattr(sinks_module.mujoco, "mj_forward", lambda model, data: None)
-    monkeypatch.setattr(sinks_module, "configure_default_hand_camera", lambda camera: None)
+    monkeypatch.setattr(runtime_sinks_output.mujoco, "MjvCamera", lambda: SimpleNamespace())
+    monkeypatch.setattr(runtime_sinks_output.mujoco, "mjv_defaultCamera", lambda camera: None)
+    monkeypatch.setattr(runtime_sinks_output.mujoco, "mj_forward", lambda model, data: None)
+    monkeypatch.setattr(runtime_sinks_output, "configure_default_hand_camera", lambda camera: None, raising=False)
 
     def _fake_try_frame_hand_camera(camera, *, model, data, aspect_ratio=None):
         calls.append(aspect_ratio)
         return True
 
     monkeypatch.setattr(
-        sinks_module,
-        "_create_offscreen_renderer",
+        runtime_sinks_output,
+        "create_offscreen_renderer",
         lambda model, *, width, height: _FakeRenderer(model, width=width, height=height),
     )
-    monkeypatch.setattr(sinks_module, "_try_frame_hand_camera", _fake_try_frame_hand_camera)
+    monkeypatch.setattr(runtime_sinks_output, "_try_frame_hand_camera", _fake_try_frame_hand_camera, raising=False)
 
     model = SimpleNamespace(
         vis=SimpleNamespace(global_=SimpleNamespace(offwidth=640, offheight=480)),
@@ -362,10 +364,10 @@ def test_create_offscreen_renderer_prefers_egl_on_linux(monkeypatch):
         return _FakeRenderer
 
     monkeypatch.delenv("MUJOCO_GL", raising=False)
-    monkeypatch.setattr(sinks_module.platform, "system", lambda: "Linux")
-    monkeypatch.setattr(sinks_module, "_reload_renderer_cls_for_backend", _fake_reload_renderer_cls_for_backend)
+    monkeypatch.setattr(runtime_sink_rendering.platform, "system", lambda: "Linux")
+    monkeypatch.setattr(runtime_sink_rendering, "reload_renderer_cls_for_backend", _fake_reload_renderer_cls_for_backend)
 
-    renderer = sinks_module._create_offscreen_renderer(object(), width=320, height=240)
+    renderer = runtime_sink_rendering.create_offscreen_renderer(object(), width=320, height=240)
 
     assert isinstance(renderer, _FakeRenderer)
     assert calls == [("reload", "egl")]

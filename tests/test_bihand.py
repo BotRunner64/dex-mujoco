@@ -10,6 +10,8 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 import somehand.interfaces.cli as cli_module
 import somehand.cli.runtime as cli_runtime
 import somehand.infrastructure.sinks as sinks_module
+import somehand.runtime.sink_outputs as runtime_sinks_output
+import somehand.runtime.sink_rendering as runtime_sink_rendering
 from somehand.cli import build_parser
 from somehand.infrastructure.artifacts import load_bihand_recording_artifact, save_bihand_recording_artifact
 from somehand.infrastructure.config_loader import load_bihand_config, load_retargeting_config
@@ -278,7 +280,7 @@ def test_bihand_output_window_sink_uses_mujoco_visualizer(monkeypatch):
         def close(self):
             created["closed"] = True
 
-    monkeypatch.setattr(sinks_module, "BiHandVisualizer", _FakeVisualizer)
+    monkeypatch.setattr(runtime_sinks_output, "BiHandVisualizer", _FakeVisualizer)
 
     sink = sinks_module.BiHandOutputWindowSink(
         left_hand_model="left_model",
@@ -340,9 +342,9 @@ def test_bihand_landmark_output_sink_applies_scene_pose(monkeypatch):
         def close(self):
             return None
 
-    monkeypatch.setattr(sinks_module, "AsyncBiHandLandmarkVisualizer", lambda: _FakeVisualizer())
+    monkeypatch.setattr(runtime_sinks_output, "AsyncBiHandLandmarkVisualizer", lambda: _FakeVisualizer())
     monkeypatch.setattr(
-        sinks_module,
+        runtime_sinks_output,
         "preprocess_landmarks",
         lambda landmarks, hand_side: np.asarray(landmarks, dtype=np.float64) + (1.0 if hand_side == "left" else 2.0),
     )
@@ -481,20 +483,19 @@ def test_bihand_render_helper_uses_front_palm_camera(monkeypatch):
         def update(self, left_qpos, right_qpos):
             return None
 
-    monkeypatch.setattr(sinks_module, "BiHandScene", _FakeScene)
-    monkeypatch.setattr(sinks_module, "_create_offscreen_renderer", lambda model, *, width, height: _FakeRenderer())
-    monkeypatch.setattr(sinks_module.mujoco, "MjvCamera", lambda: SimpleNamespace())
-    monkeypatch.setattr(sinks_module.mujoco, "mjv_defaultCamera", lambda camera: None)
-    monkeypatch.setattr(sinks_module, "configure_free_camera", lambda camera, **kwargs: None)
-    monkeypatch.setattr(sinks_module.cv2, "cvtColor", lambda frame, code: frame)
+    monkeypatch.setattr(runtime_sink_rendering, "BiHandScene", _FakeScene)
+    monkeypatch.setattr(runtime_sink_rendering, "create_offscreen_renderer", lambda model, *, width, height: _FakeRenderer())
+    monkeypatch.setattr(runtime_sink_rendering.mujoco, "MjvCamera", lambda: SimpleNamespace())
+    monkeypatch.setattr(runtime_sink_rendering.mujoco, "mjv_defaultCamera", lambda camera: None)
+    monkeypatch.setattr(runtime_sink_rendering, "configure_free_camera", lambda camera, **kwargs: None)
 
     def _fake_try_frame_hand_camera(camera, *, model, data, aspect_ratio=None, azimuth=None, elevation=None):
         calls.append((azimuth, elevation))
         return True
 
-    monkeypatch.setattr(sinks_module, "_try_frame_hand_camera", _fake_try_frame_hand_camera)
+    monkeypatch.setattr(runtime_sink_rendering, "_try_frame_hand_camera", _fake_try_frame_hand_camera)
 
-    helper = sinks_module._BiHandRenderHelper(
+    helper = runtime_sink_rendering.BiHandRenderHelper(
         left_hand_model=object(),
         right_hand_model=object(),
         panel_width=640,

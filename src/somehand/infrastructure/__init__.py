@@ -1,85 +1,62 @@
 """Infrastructure adapters for external systems."""
 
-from .artifacts import (
-    load_bihand_recording_artifact,
-    load_hand_recording_artifact,
-    save_bihand_recording_artifact,
-    save_hand_recording_artifact,
-    save_trajectory_artifact,
-)
-from .config_loader import load_bihand_config, load_retargeting_config
-from .controllers import LinkerHandModelAdapter, LinkerHandSdkController, MujocoSimController, infer_linkerhand_model_family
-from .hand_model import HandModel
-from .model_name_resolver import ModelNameResolver
-from .preview import OpenCvPreviewWindow
-from .sinks import (
-    AsyncLandmarkOutputSink,
-    AsyncBiHandLandmarkOutputSink,
-    BiHandOutputWindowSink,
-    BiHandVideoOutputSink,
-    RobotHandOutputSink,
-    RobotHandTargetOutputSink,
-    RobotHandVideoOutputSink,
-    TrajectoryRecorder,
-)
-from .sources import (
-    BiHCMocapInputSource,
-    BiHandMediaPipeInputSource,
-    BiHandPicoInputSource,
-    HCMocapInputSource,
-    MediaPipeInputSource,
-    RecordedBiHandDataSource,
-    RecordedHandDataSource,
-    RecordingBiHandTrackingSource,
-    RecordingHandTrackingSource,
-    create_bihand_hc_mocap_udp_source,
-    create_bihand_pico_source,
-    create_bihand_recording_source,
-    create_hc_mocap_udp_source,
-    create_pico_source,
-    create_recording_source,
-)
-from .terminal_controls import TerminalRecordingController
-from .vector_solver import VectorRetargeter
+from __future__ import annotations
 
-__all__ = [
-    "AsyncLandmarkOutputSink",
-    "AsyncBiHandLandmarkOutputSink",
-    "BiHCMocapInputSource",
-    "BiHandMediaPipeInputSource",
-    "BiHandOutputWindowSink",
-    "BiHandPicoInputSource",
-    "BiHandVideoOutputSink",
-    "HCMocapInputSource",
-    "HandModel",
-    "LinkerHandModelAdapter",
-    "LinkerHandSdkController",
-    "MediaPipeInputSource",
-    "ModelNameResolver",
-    "MujocoSimController",
-    "OpenCvPreviewWindow",
-    "RecordedBiHandDataSource",
-    "RecordedHandDataSource",
-    "RecordingBiHandTrackingSource",
-    "RecordingHandTrackingSource",
-    "RobotHandOutputSink",
-    "RobotHandTargetOutputSink",
-    "RobotHandVideoOutputSink",
-    "TrajectoryRecorder",
-    "TerminalRecordingController",
-    "VectorRetargeter",
-    "create_bihand_hc_mocap_udp_source",
-    "create_bihand_pico_source",
-    "create_bihand_recording_source",
-    "create_hc_mocap_udp_source",
-    "create_pico_source",
-    "create_recording_source",
-    "load_bihand_recording_artifact",
-    "load_bihand_config",
-    "load_hand_recording_artifact",
-    "load_retargeting_config",
-    "save_bihand_recording_artifact",
-    "save_hand_recording_artifact",
-    "save_trajectory_artifact",
-    "infer_linkerhand_model_family",
-]
+from importlib import import_module
+
+
+_EXPORT_MODULES = {
+    "AsyncBiHandLandmarkOutputSink": ".sinks",
+    "AsyncLandmarkOutputSink": ".sinks",
+    "BiHCMocapInputSource": ".sources",
+    "BiHandMediaPipeInputSource": ".sources",
+    "BiHandOutputWindowSink": ".sinks",
+    "BiHandPicoInputSource": ".sources",
+    "BiHandVideoOutputSink": ".sinks",
+    "HCMocapInputSource": ".sources",
+    "HandModel": ".hand_model",
+    "LinkerHandModelAdapter": ".controllers",
+    "LinkerHandSdkController": ".controllers",
+    "MediaPipeInputSource": ".sources",
+    "ModelNameResolver": ".model_name_resolver",
+    "MujocoSimController": ".controllers",
+    "OpenCvPreviewWindow": ".preview",
+    "RecordedBiHandDataSource": ".sources",
+    "RecordedHandDataSource": ".sources",
+    "RecordingBiHandTrackingSource": ".sources",
+    "RecordingHandTrackingSource": ".sources",
+    "RobotHandOutputSink": ".sinks",
+    "RobotHandTargetOutputSink": ".sinks",
+    "RobotHandVideoOutputSink": ".sinks",
+    "TerminalRecordingController": ".terminal_controls",
+    "TrajectoryRecorder": ".sinks",
+    "VectorRetargeter": ".vector_solver",
+    "create_bihand_hc_mocap_udp_source": ".sources",
+    "create_bihand_pico_source": ".sources",
+    "create_bihand_recording_source": ".sources",
+    "create_hc_mocap_udp_source": ".sources",
+    "create_pico_source": ".sources",
+    "create_recording_source": ".sources",
+    "infer_linkerhand_model_family": ".controllers",
+    "load_bihand_config": ".config_loader",
+    "load_bihand_recording_artifact": ".artifacts",
+    "load_hand_recording_artifact": ".artifacts",
+    "load_retargeting_config": ".config_loader",
+    "save_bihand_recording_artifact": ".artifacts",
+    "save_hand_recording_artifact": ".artifacts",
+    "save_trajectory_artifact": ".artifacts",
+}
+
+__all__ = sorted(_EXPORT_MODULES)
+
+
+def __getattr__(name: str):
+    module_name = _EXPORT_MODULES.get(name)
+    if module_name is None:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    module = import_module(module_name, __name__)
+    return getattr(module, name)
+
+
+def __dir__() -> list[str]:
+    return sorted(set(globals()) | set(__all__))
