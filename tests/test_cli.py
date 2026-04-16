@@ -2,6 +2,7 @@ import sys
 from pathlib import Path
 from types import SimpleNamespace
 import importlib
+import runpy
 
 import numpy as np
 import pytest
@@ -190,6 +191,17 @@ def test_webcam_both_dispatches_to_bihand(monkeypatch):
     cli_main_module.main(["webcam", "--hand", "both"])
 
     assert called == [("bihand", str(DEFAULT_BIHAND_CONFIG_PATH), "both")]
+
+
+def test_python_module_entrypoint_delegates_to_cli_main(monkeypatch):
+    called = []
+
+    monkeypatch.setattr(sys, "argv", ["somehand.cli", "dump-video", "--recording", "session.pkl", "--output", "out.mp4"])
+    monkeypatch.setattr(cli_main_module, "main", lambda argv=None: called.append(argv))
+
+    runpy.run_module("somehand.cli", run_name="__main__")
+
+    assert called == [["dump-video", "--recording", "session.pkl", "--output", "out.mp4"]]
 
 
 def test_bihand_subcommand_is_rejected():
