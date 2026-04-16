@@ -29,6 +29,21 @@ def test_hc_mocap_uses_repo_defaults():
     assert args.reference_bvh == str(DEFAULT_HC_MOCAP_REFERENCE_BVH)
     assert args.udp_port == 1118
     assert args.hand == "right"
+    assert args.signal_fps is None
+
+
+def test_hc_mocap_rejects_removed_signal_filter_args():
+    parser = build_parser()
+
+    with pytest.raises(SystemExit):
+        parser.parse_args(["hc-mocap", "--signal-filter-mode", "one-euro"])
+
+
+def test_hc_mocap_accepts_fixed_signal_fps():
+    parser = build_parser()
+    args = parser.parse_args(["hc-mocap", "--signal-fps", "50"])
+
+    assert args.signal_fps == 50
 
 
 def test_video_command_requires_video_path():

@@ -20,6 +20,7 @@ from somehand.runtime import (
     save_bihand_recording_artifact,
     save_hand_recording_artifact,
 )
+from somehand.runtime.source_sampling import FixedRateBiHandTrackingSource, FixedRateHandTrackingSource
 
 from .runtime import (
     build_bihand_engine as _build_bihand_engine,
@@ -94,6 +95,14 @@ def _wrap_bihand_source_for_interactive_recording(source, *, record_output_path:
         return source, None
     recording_source = RecordingBiHandTrackingSource(source, recording_enabled=False)
     return recording_source, TerminalRecordingController(recording_source)
+
+
+def _wrap_live_hand_source(source, *, args: argparse.Namespace):
+    return FixedRateHandTrackingSource(source, sample_fps=getattr(args, "signal_fps", None))
+
+
+def _wrap_live_bihand_source(source, *, args: argparse.Namespace):
+    return FixedRateBiHandTrackingSource(source, sample_fps=getattr(args, "signal_fps", None))
 
 
 def _run_webcam(args: argparse.Namespace) -> None:
@@ -197,7 +206,10 @@ def _run_dump_video(args: argparse.Namespace) -> None:
 
 def _run_pico(args: argparse.Namespace) -> None:
     source, recording_controller = _wrap_source_for_interactive_recording(
-        create_pico_source(hand_side=args.hand, timeout=args.pico_timeout),
+        _wrap_live_hand_source(
+            create_pico_source(hand_side=args.hand, timeout=args.pico_timeout),
+            args=args,
+        ),
         record_output_path=args.record_output,
     )
     engine = _build_engine(args, input_type="pico")
@@ -208,7 +220,11 @@ def _run_pico(args: argparse.Namespace) -> None:
         show_preview=False,
         key_callback=None if recording_controller is None else recording_controller.handle_keypress,
     )
-    extra_lines = [f"Backend: {args.backend}", "Requires xrobotoolkit_sdk plus active PICO hand tracking / gesture mode."]
+    extra_lines = [
+        f"Backend: {args.backend}",
+        f"Signal sampling: {source.fps} fps",
+        "Requires xrobotoolkit_sdk plus active PICO hand tracking / gesture mode.",
+    ]
     if recording_controller is not None:
         extra_lines.append("Press 'r' in the terminal or robot-hand viewer to start recording.")
         extra_lines.append("Press 's' in the terminal or robot-hand viewer to stop recording, save, and exit.")
@@ -234,19 +250,22 @@ def _run_pico(args: argparse.Namespace) -> None:
 
 def _run_hc_mocap_udp(args: argparse.Namespace) -> None:
     source = _wrap_source_for_recording(
-        create_hc_mocap_udp_source(
-            reference_bvh=args.reference_bvh,
-            hand_side=args.hand,
-            host=args.udp_host,
-            port=args.udp_port,
-            timeout=args.udp_timeout,
+        _wrap_live_hand_source(
+            create_hc_mocap_udp_source(
+                reference_bvh=args.reference_bvh,
+                hand_side=args.hand,
+                host=args.udp_host,
+                port=args.udp_port,
+                timeout=args.udp_timeout,
+            ),
+            args=args,
         ),
         record_output_path=args.record_output,
     )
     engine = _build_engine(args, input_type="hc_mocap")
     session = _build_runtime_session(engine, args, visualize=True, show_preview=False)
     stats = source.stats_snapshot()
-    extra_lines: list[str] = [f"Backend: {args.backend}"]
+    extra_lines: list[str] = [f"Backend: {args.backend}", f"Signal sampling: {source.fps} fps"]
     if stats:
         extra_lines.append(
             "UDP packet format:"
@@ -370,7 +389,10 @@ def _run_bihand_dump_video(args: argparse.Namespace) -> None:
 
 def _run_bihand_pico(args: argparse.Namespace) -> None:
     source, recording_controller = _wrap_bihand_source_for_interactive_recording(
-        create_bihand_pico_source(timeout=args.pico_timeout),
+        _wrap_live_bihand_source(
+            create_bihand_pico_source(timeout=args.pico_timeout),
+            args=args,
+        ),
         record_output_path=args.record_output,
     )
     engine = _build_bihand_engine(args, input_type="pico")
@@ -380,7 +402,7 @@ def _run_bihand_pico(args: argparse.Namespace) -> None:
         show_preview=False,
         key_callback=None if recording_controller is None else recording_controller.handle_keypress,
     )
-    extra_lines = ["Requires xrobotoolkit_sdk plus active PICO hand tracking / gesture mode."]
+    extra_lines = [f"Signal sampling: {source.fps} fps", "Requires xrobotoolkit_sdk plus active PICO hand tracking / gesture mode."]
     if recording_controller is not None:
         extra_lines.append("Press 'r' in the terminal or bi-hand viewer to start recording.")
         extra_lines.append("Press 's' in the terminal or bi-hand viewer to stop recording, save, and exit.")
@@ -406,18 +428,21 @@ def _run_bihand_pico(args: argparse.Namespace) -> None:
 
 def _run_bihand_hc_mocap_udp(args: argparse.Namespace) -> None:
     source = _wrap_bihand_source_for_recording(
-        create_bihand_hc_mocap_udp_source(
-            reference_bvh=args.reference_bvh,
-            host=args.udp_host,
-            port=args.udp_port,
-            timeout=args.udp_timeout,
+        _wrap_live_bihand_source(
+            create_bihand_hc_mocap_udp_source(
+                reference_bvh=args.reference_bvh,
+                host=args.udp_host,
+                port=args.udp_port,
+                timeout=args.udp_timeout,
+            ),
+            args=args,
         ),
         record_output_path=args.record_output,
     )
     engine = _build_bihand_engine(args, input_type="hc_mocap")
     session = _build_bihand_session(engine, visualize=True, show_preview=False)
     stats = source.stats_snapshot()
-    extra_lines: list[str] = []
+    extra_lines: list[str] = [f"Signal sampling: {source.fps} fps"]
     if stats:
         extra_lines.append(
             "UDP packet format:"

@@ -57,6 +57,15 @@ def add_common_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--model-family", default=None, help="Optional LinkerHand SDK model family override")
 
 
+def add_live_sampling_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--signal-fps",
+        type=int,
+        default=None,
+        help="Fixed output sampling rate for live mocap input; defaults to the source nominal fps",
+    )
+
+
 def add_dump_video_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "-c",
@@ -115,6 +124,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     pico = subparsers.add_parser("pico", help="Retarget from live PICO hand tracking via XRoboToolkit")
     add_common_args(pico)
+    add_live_sampling_args(pico)
     pico.add_argument(
         "--pico-timeout",
         type=float,
@@ -124,6 +134,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     hc_mocap = subparsers.add_parser("hc-mocap", help="Retarget from a live hc_mocap UDP stream")
     add_common_args(hc_mocap)
+    add_live_sampling_args(hc_mocap)
     hc_mocap.add_argument(
         "--reference-bvh",
         default=str(DEFAULT_HC_MOCAP_REFERENCE_BVH),
@@ -146,6 +157,7 @@ __all__ = [
     "_SomehandArgumentParser",
     "add_common_args",
     "add_dump_video_args",
+    "add_live_sampling_args",
     "build_parser",
     "normalize_both_hand_args",
     "parse_hand_selector",

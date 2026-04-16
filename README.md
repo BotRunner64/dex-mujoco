@@ -234,6 +234,7 @@ somehand hc-mocap \
 
 `hc-mocap` 现在只保留 UDP 模式，不再支持离线 `BVH` 输入。它也不依赖 `Teleopit` Python 包；默认直接使用代码内置的 joint 顺序解析每个 UDP 包里的一行 BVH motion floats。只有当你想覆盖默认解析格式时，才需要额外传 `--reference-bvh`。
 `hc_mocap` 输入会自动使用 wrist 真局部坐标做 retarget，因此即使配置文件里是 `wrist_local`，脚本也会切到更适合 `hc_mocap` 的处理方式。
+为了让录制文件里的 `fps` 和之后 `replay` 的节拍一致，实时动捕输入会按固定输出节拍采样；默认跟随源的名义 fps，也可以用 `--signal-fps` 显式指定。
 如果要检查 UDP 是否正常进入，可以看终端的 `UDP stats` 输出，确认 `recv` / `valid` 是否持续增长，以及 `floats` 是否等于内置格式的通道数（默认是 `159`）。
 输入手势窗口里显示的是参与 retarget 的输入 landmarks，因此看到的是已经对齐到机器人坐标系的手部骨架；机器人窗口单独显示 retarget 后的手模型。
 
@@ -286,6 +287,9 @@ somehand pico \
     --hand right \
     --pico-timeout 90
 ```
+
+`pico` 同样支持 `--signal-fps`，用于把实时录制和后续 `replay` 锁定到同一个节拍。
+
 
 ### 6.4 LinkerHand 真机 backend
 
